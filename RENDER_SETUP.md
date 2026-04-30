@@ -60,6 +60,24 @@ Para Salice completar:
 - `SALICE_GESI_API_USERNAME`
 - `SALICE_GESI_API_PASSWORD`
 
+## Variables importantes
+
+GBA usa las variables sin prefijo porque son las defaults del servicio:
+
+- `RECEIPTS_API_BASE_URL=https://m5gba.grupoesi.com.ar`
+- `PADRON_API_BASE_URL=https://m5gba.grupoesi.com.ar`
+- `RECEIPTS_API_EMPRESA_IDS=2`
+- `PADRON_API_EMPRESA_ID=2`
+
+Salice necesita overrides prefijados para no heredar el tenant de GBA:
+
+- `SALICE_RECEIPTS_API_BASE_URL=https://m5mdp.grupoesi.com.ar`
+- `SALICE_PADRON_API_BASE_URL=https://m5mdp.grupoesi.com.ar`
+- `SALICE_RECEIPTS_API_EMPRESA_IDS=3,6`
+- `SALICE_RECEIPTS_API_PAGE_SIZE=500`
+
+El router les saca el prefijo `SALICE_` solo al proceso de Salice.
+
 ## Variables de ruteo
 
 Default incluido en `render.yaml`:
