@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: conciliador
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GESI_API_USERNAME
+        sync: false
+      - key: GESI_API_PASSWORD
+        sync: false

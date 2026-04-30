@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pandas
+openpyxl
+lxml
+pdfplumber
+python-multipart
+python-dotenv
+pytest
+scipy
+xlrd>=2.0.1
