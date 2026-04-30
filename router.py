@@ -29,6 +29,29 @@ HOP_BY_HOP_HEADERS = {
     "upgrade",
 }
 
+APP_ENV_KEYS = {
+    "GESI_API_USERNAME",
+    "GESI_API_PASSWORD",
+    "RECEIPTS_API_USERNAME",
+    "RECEIPTS_API_PASSWORD",
+    "PADRON_API_USERNAME",
+    "PADRON_API_PASSWORD",
+    "RECEIPTS_API_TOKEN",
+    "PADRON_API_TOKEN",
+    "RECEIPTS_API_BASE_URL",
+    "PADRON_API_BASE_URL",
+    "RECEIPTS_API_EMPRESA_IDS",
+    "PADRON_API_EMPRESA_ID",
+    "RECEIPTS_API_PAGE_SIZE",
+    "PADRON_API_PAGE_SIZE",
+    "RECEIPTS_API_PAGE_SIZE_FALLBACKS",
+    "PADRON_API_PAGE_SIZE_FALLBACKS",
+    "RECEIPTS_API_WINDOW_DAYS",
+    "RECEIPTS_API_TIMEOUT_SECONDS",
+    "PADRON_API_TIMEOUT_SECONDS",
+    "PADRON_API_GETITEM_CONCURRENCY",
+}
+
 processes: list[subprocess.Popen] = []
 client: httpx.AsyncClient | None = None
 
@@ -44,6 +67,9 @@ SALICE_HOSTS = _split_hosts(os.getenv("SALICE_HOSTS", ""), ["salice"])
 
 def _env_for_app(prefix: str) -> dict[str, str]:
     env = os.environ.copy()
+    if prefix.upper() == "SALICE":
+        for key in APP_ENV_KEYS:
+            env.pop(key, None)
     for key, value in os.environ.items():
         marker = f"{prefix}_"
         if key.startswith(marker) and value:
