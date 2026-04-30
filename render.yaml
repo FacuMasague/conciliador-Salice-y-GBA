@@ -33,6 +33,14 @@ services:
         value: "4"
       - key: DEFAULT_APP
         value: gba
+      - key: SALICE_RECEIPTS_API_BASE_URL
+        value: https://m5mdp.grupoesi.com.ar
+      - key: SALICE_PADRON_API_BASE_URL
+        value: https://m5mdp.grupoesi.com.ar
+      - key: SALICE_RECEIPTS_API_EMPRESA_IDS
+        value: "3,6"
+      - key: SALICE_RECEIPTS_API_PAGE_SIZE
+        value: "500"
       - key: GBA_GESI_API_USERNAME
         sync: false
       - key: GBA_GESI_API_PASSWORD
