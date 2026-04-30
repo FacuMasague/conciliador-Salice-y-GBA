@@ -1,11 +1,10 @@
 services:
   - type: web
-    name: conciliador-gba
+    name: conciliador-salice-y-gba
     runtime: python
-    rootDir: Conciliador GBA
     plan: starter
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt && pip install -r "Conciliador GBA/requirements.txt" && pip install -r "conciliador SALICE/requirements.txt"
+    startCommand: uvicorn router:app --host 0.0.0.0 --port $PORT
     autoDeploy: false
     envVars:
       - key: PYTHON_VERSION
@@ -32,31 +31,25 @@ services:
         value: "60"
       - key: PADRON_API_GETITEM_CONCURRENCY
         value: "4"
-      - key: GESI_API_USERNAME
+      - key: DEFAULT_APP
+        value: gba
+      - key: GBA_HOSTS
+        value: gba
+      - key: SALICE_HOSTS
+        value: salice
+      - key: GBA_GESI_API_USERNAME
         sync: false
-      - key: GESI_API_PASSWORD
+      - key: GBA_GESI_API_PASSWORD
         sync: false
-      - key: RECEIPTS_API_USERNAME
+      - key: GBA_RECEIPTS_API_USERNAME
         sync: false
-      - key: RECEIPTS_API_PASSWORD
+      - key: GBA_RECEIPTS_API_PASSWORD
         sync: false
-      - key: PADRON_API_USERNAME
+      - key: GBA_PADRON_API_USERNAME
         sync: false
-      - key: PADRON_API_PASSWORD
+      - key: GBA_PADRON_API_PASSWORD
         sync: false
-
-  - type: web
-    name: conciliador-salice
-    runtime: python
-    rootDir: conciliador SALICE
-    plan: starter
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
-    autoDeploy: false
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.11
-      - key: GESI_API_USERNAME
+      - key: SALICE_GESI_API_USERNAME
         sync: false
-      - key: GESI_API_PASSWORD
+      - key: SALICE_GESI_API_PASSWORD
         sync: false
