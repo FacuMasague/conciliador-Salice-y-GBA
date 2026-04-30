@@ -1,0 +1,1930 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0"/>
+  <meta http-equiv="Pragma" content="no-cache"/>
+  <meta http-equiv="Expires" content="0"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Conciliador de Recibos e Ingresos</title>
+  <style>
+    :root{
+      --bg-top:#f5f6f7;
+      --bg-bottom:#eef1f4;
+      --panel:#ffffff;
+      --panel-strong:#ffffff;
+      --line:#d7dce2;
+      --line-soft:#e7ebf0;
+      --text:#20252b;
+      --muted:#66707b;
+      --accent:#2f455c;
+      --accent-soft:#eef3f8;
+      --accent-2:#8f6f4c;
+      --shadow:0 16px 36px rgba(27,35,44,0.06);
+      --shadow-soft:0 8px 20px rgba(27,35,44,0.05);
+      --radius-lg:20px;
+      --radius-md:14px;
+      --radius-sm:10px;
+    }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      margin: 24px;
+      background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+      color:var(--text);
+    }
+    h1 {
+      margin-bottom: 8px;
+      text-align: center;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      font-size: clamp(30px, 3.4vw, 40px);
+      letter-spacing: -.02em;
+      line-height: 1;
+    }
+    h2 {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      font-size: 24px;
+      letter-spacing: -.02em;
+      margin: 0 0 10px;
+    }
+    .subtitle{ text-align:center; margin: 0 0 16px; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; }
+    .card {
+      border: 1px solid rgba(78,90,103,0.10);
+      border-radius: var(--radius-lg);
+      padding: 22px;
+      box-shadow: var(--shadow);
+      min-width: 320px;
+      background: var(--panel);
+    }
+    label { display:block; margin: 10px 0 6px; font-weight: 700; }
+    input[type=file], input[type=number], input[type=date], select { width: 100%; }
+    input[type=number], input[type=date], select {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      background:#fff;
+      box-sizing:border-box;
+      color:var(--text);
+    }
+    button { padding: 10px 14px; border: 0; border-radius: var(--radius-sm); cursor: pointer; font-weight: 700; transition: transform .16s ease, box-shadow .16s ease, background .16s ease; }
+    button:hover:not(:disabled){ transform: translateY(-1px); }
+    button:disabled { opacity: .6; cursor: not-allowed; }
+    table { border-collapse: separate; border-spacing: 0; width: 100%; }
+    th, td { border-right: 1px solid #dfe4ea; border-bottom: 1px solid #dfe4ea; padding: 9px 10px; font-size: 12px; vertical-align: top; }
+    tr > *:first-child { border-left: 1px solid #dfe4ea; }
+    thead tr:first-child th { border-top: 1px solid #dfe4ea; }
+    th {
+      background: #f3f6f9;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      color:#37424f;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      font-size: 11px;
+      text-align: center;
+    }
+    th.sortable {
+      cursor: pointer;
+      user-select: none;
+      transition: background .14s ease, color .14s ease;
+      padding-left: 24px;
+      padding-right: 24px;
+    }
+    th.sortable:hover {
+      background: #e9eef4;
+    }
+    th.sortable .th-inner {
+      display: block;
+      width: 100%;
+      text-align: center;
+    }
+    th.sortable .sort-arrow {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      width: 0;
+      height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-bottom: 6px solid currentColor;
+      opacity: 0;
+      transform: translateY(-50%);
+      transition: opacity .14s ease;
+      pointer-events: none;
+    }
+    th.sortable.is-active {
+      background: #dfe7ef;
+      color:#273748;
+    }
+    th.sortable.is-active .sort-arrow {
+      opacity: .9;
+    }
+    th.sortable.is-desc .sort-arrow {
+      border-bottom: 0;
+      border-top: 6px solid currentColor;
+    }
+    tbody tr:nth-child(even) td { background: #f4f6f2; }
+    tbody tr:nth-child(odd) td { background: #ffffff; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .hero-sub { text-align: center; margin-top: 0; margin-bottom: 22px; font-size: 14px; }
+    .pill { display:inline-block; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+    .ok { background: #e6f4e8; color:#20552a; }
+    .warn { background: #fff1d6; color:#845e18; }
+    .bad { background: #fde5e1; color:#8e3227; }
+    .section {
+      margin-top: 22px;
+      background: rgba(255,255,255,0.92);
+      border: 1px solid rgba(89,102,117,0.10);
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      box-shadow: var(--shadow-soft);
+    }
+    .scroll {
+      max-height: 420px;
+      overflow: auto;
+      border: 1px solid #e5e9df;
+      border-radius: var(--radius-md);
+      background:#fff;
+    }
+    .error { color: #b00020; white-space: pre-wrap; }
+    /* Pop-out menu */
+    .menu-wrap{ position: fixed; top: 16px; right: 16px; z-index: 60; }
+    .menu-btn{
+      width: 42px; height: 42px; border-radius: 12px; border: 1px solid rgba(88,101,116,0.14);
+      background: rgba(255,255,255,0.96); box-shadow: var(--shadow-soft); font-size: 16px; color:#33414f;
+    }
+    .menu-dd{
+      position: absolute; top: 50px; right: 0; background: rgba(255,255,255,0.98);
+      border: 1px solid #dde4ec; border-radius: 12px; min-width: 176px; box-shadow: var(--shadow-soft);
+      padding: 6px; display:none;
+    }
+    .menu-item{ width: 100%; text-align: left; padding: 9px 10px; border-radius: 8px; border: 0; background: transparent; font-weight: 700; color:#344252; }
+    .menu-item:hover{ background: #f3f6fa; }
+
+    /* Upload layout */
+    .uploads{
+      display:grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap:18px;
+      align-items:stretch;
+    }
+    .uploads.uploads--api{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .upload-col{
+      min-width: 0;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+      padding:16px;
+      border:1px solid #dde4ec;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.85);
+    }
+    .upload-col--wide{ grid-column: 1 / -1; }
+    .upload-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .upload-title{
+      font-size:15px;
+      font-weight:800;
+      color:#22313f;
+      letter-spacing:-.01em;
+      margin:0;
+    }
+    .upload-note{
+      color:#6a7682;
+      font-size:12px;
+      line-height:1.45;
+      margin:4px 0 0;
+    }
+    .upload-tag{
+      display:inline-flex;
+      align-items:center;
+      padding:5px 9px;
+      border-radius:999px;
+      background:#edf3f8;
+      color:#425b73;
+      font-size:10px;
+      font-weight:800;
+      letter-spacing:.06em;
+      text-transform:uppercase;
+      border:1px solid #d9e3ee;
+    }
+    .upload-stack{ display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:16px; }
+    .range-panel{
+      margin-top: 20px;
+      border: 1px solid #dbe1e8;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      padding: 16px 18px 18px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.85);
+    }
+    .range-head{ display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+    .range-title{ font-size: 20px; font-weight: 800; letter-spacing: -.02em; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    .range-badge{
+      display:inline-flex; align-items:center; gap:6px; padding:6px 10px;
+      border-radius:999px; background:#eff4fa; color:#31506e; font-size:11px; font-weight:700;
+      border:1px solid #d8e1eb;
+    }
+    .range-grid{ display:grid; grid-template-columns: repeat(2, minmax(0, 240px)); gap:16px; margin-top:16px; }
+    .range-field label{ margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:#5f6d7c; }
+    .range-note{ margin-top:12px; color:#66705d; font-size:12px; }
+    .date-control{ position: relative; }
+    .date-trigger{
+      width:100%;
+      min-height:46px;
+      border:1px solid #d5dce5;
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 10px 12px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+      color:#273121;
+    }
+    .date-trigger.is-empty{ color:#7a8375; }
+    .date-trigger.is-active{
+      border-color:#7d97b2;
+      box-shadow: 0 0 0 3px rgba(73,109,145,0.12);
+    }
+    .date-trigger-main{ display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
+    .date-trigger-label{ font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:#75806d; }
+    .date-trigger-value{ font-size:14px; font-weight:700; color:#23303c; }
+    .date-trigger-icon{
+      width:30px; height:30px; border-radius:9px; background:#f0f4f8; color:#41596f;
+      display:flex; align-items:center; justify-content:center; font-size:13px; flex:0 0 auto;
+    }
+    .date-actions{ display:flex; gap:8px; margin-top:8px; }
+    .date-clear{
+      border:1px solid #d7dde5; background:rgba(255,255,255,0.92); color:#5e6d7b;
+      padding:5px 9px; border-radius:999px; font-size:10px; font-weight:700;
+    }
+    .date-popover{
+      position:absolute; top: calc(100% + 8px); left:0; z-index:40; width: 286px;
+      background: #ffffff; border:1px solid #dbe3ec; border-radius: 16px;
+      box-shadow: 0 18px 34px rgba(36,46,56,0.12); padding: 12px;
+    }
+    .date-popover.hidden{ display:none; }
+    .date-popover-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+    .date-month{ font-size:16px; font-weight:800; color:#2b3845; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; text-transform: capitalize; }
+    .date-nav{ display:flex; gap:6px; }
+    .date-nav button{
+      width:28px; height:28px; padding:0; border-radius:8px; background:#f3f6fa; color:#42576b; border:1px solid #dde5ee;
+    }
+    .date-weekdays, .date-days{ display:grid; grid-template-columns: repeat(7, 1fr); gap:6px; }
+    .date-weekdays div{
+      text-align:center; font-size:10px; color:#7c8792; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+      padding:4px 0;
+    }
+    .date-day{
+      height:32px; border-radius:9px; border:1px solid transparent; background:#fff; color:#2d3945; font-weight:700;
+      display:flex; align-items:center; justify-content:center; padding:0;
+    }
+    .date-day:hover:not(:disabled){ background:#edf3f9; border-color:#d7e0ea; }
+    .date-day.is-selected{ background:#314b64; color:#fff; box-shadow: 0 8px 16px rgba(49,75,100,0.16); }
+    .date-day.is-today{ border-color:#c9b18f; color:#8d6840; }
+    .date-day.is-outside{ color:#b2b7af; background:#fafbf9; }
+    .date-day:disabled{ color:#c8ccc5; background:#f7f8f6; cursor:not-allowed; }
+    .range-footer{ margin-top:12px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:center; }
+    .range-summary{ color:#4e5e6f; font-size:12px; font-weight:700; }
+    .action-row{ margin-top: 16px; display:flex; gap: 10px; align-items: center; flex-wrap:wrap; }
+    .btn-primary{ background:linear-gradient(180deg, #3d5369 0%, #314555 100%); color:#fff; box-shadow: 0 10px 18px rgba(49,69,85,0.14), inset 0 0 0 1px rgba(255,255,255,.08); }
+    .btn-secondary{ background:#f4f6f8; color:#324252; border:1px solid #d8e0e7; }
+    .mode-row{ display:flex; gap:12px; align-items:end; margin-bottom:12px; flex-wrap:wrap; }
+    .mode-row .mode-box{ min-width: 240px; }
+    .hidden{ display:none !important; }
+    .drop{
+      width:100%;
+      min-height:148px;
+      border:2px dashed #c8d2dd;
+      border-radius: 18px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      padding: 18px;
+      background: linear-gradient(180deg, #fbfcfd 0%, #f4f7fa 100%);
+      cursor:pointer;
+      user-select:none;
+      box-sizing:border-box;
+      transition:border-color .16s ease, background .16s ease, box-shadow .16s ease, transform .16s ease;
+    }
+    .drop:hover{ border-color:#99abc0; box-shadow: inset 0 0 0 1px rgba(62,89,117,0.06); }
+    .drop.dragover{ background:#eef4f9; border-color:#6f89a3; transform: translateY(-1px); }
+    .drop-inner{
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      max-width:100%;
+    }
+    .drop-icon{
+      width:42px;
+      height:42px;
+      border-radius:12px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:#e7eef5;
+      color:#3d5871;
+      font-size:18px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+    }
+    .drop-title{
+      font-size:14px;
+      font-weight:800;
+      color:#3a4d61;
+    }
+    .drop-subtitle{
+      font-size:12px;
+      color:#7a8795;
+      line-height:1.45;
+      max-width: 340px;
+    }
+    .drop .name{
+      font-size: 12px;
+      color:#33404e;
+      word-break: break-word;
+      line-height:1.45;
+      max-width: 100%;
+    }
+    .file-hidden{ position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
+    @media (max-width: 980px){
+      .uploads{ grid-template-columns: 1fr; }
+      .upload-col--wide{ grid-column: auto; }
+      .upload-stack{ grid-template-columns: 1fr; }
+      .range-grid{ grid-template-columns: 1fr; }
+    }
+
+    /* Config modal layout */
+    /*
+      V3.5.3: el modal puede ser más alto que la pantalla (por descripciones y más parámetros).
+      Para evitar que quede “cortado” sin poder scrollear, el scroll debe vivir dentro del modal.
+    */
+    #cfg_modal, #meta_modal{ overflow: auto; }
+    .cfg-box{ background:#fff; max-width: 860px; margin: 7vh auto; padding: 18px; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      max-height: 86vh; overflow: auto; -webkit-overflow-scrolling: touch; }
+    .cfg-head{ display:flex; justify-content: space-between; align-items:center; gap:10px; }
+    .cfg-section{ margin-top: 14px; padding-top: 10px; border-top: 1px solid #eee; }
+    .cfg-section:first-of-type{ border-top: 0; padding-top: 0; }
+    .cfg-title{ font-weight: 800; margin-bottom: 10px; }
+    .cfg-grid{ display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .cfg-field{ min-width: 0; }
+    .cfg-span-2{ grid-column: span 2; }
+    .cfg-field label{ margin-top: 0; }
+    .cfg-actions{ margin-top: 14px; display:flex; gap:10px; justify-content:flex-end; }
+    @media (max-width: 780px){
+      .cfg-grid{ grid-template-columns: 1fr; }
+      .cfg-span-2{ grid-column: auto; }
+    }
+
+    /* Botón chico para acciones en tablas (V3.7) */
+    .btn-mini { padding: 6px 10px; border-radius: 10px; border: 1px solid #d8e0e7; background: #f4f7fa; cursor: pointer; font-weight: 700; color:#324252; }
+    .btn-mini:hover { filter: brightness(0.98); }
+
+  </style>
+</head>
+<body>
+  <div class="menu-wrap">
+    <button id="menu_btn" type="button" class="menu-btn" title="Menú" aria-label="Menú">☰</button>
+    <div id="menu_dd" class="menu-dd">
+      <button id="menu_cfg" type="button" class="menu-item">Configuración</button>
+      <button id="menu_meta" type="button" class="menu-item">Meta</button>
+    </div>
+  </div>
+
+  <h1>Conciliador de Recibos e Ingresos</h1>
+  <p class="muted hero-sub">Subí los extractos nuevos, el record bancario y el record de Mercado Pago. Elegí el rango de recibos que querés consultar y revisá los resultados con una vista más clara.</p>
+
+  <div class="row">
+    <div class="card" style="flex: 1;">
+      <div class="uploads">
+        <div class="upload-col upload-col--wide">
+          <div class="upload-head">
+            <div>
+              <div class="upload-title">Extractos nuevos</div>
+              <div class="upload-note">Subí acá los archivos crudos de BBVA, Galicia o Mercado Pago que querés conciliar en esta corrida.</div>
+            </div>
+            <span class="upload-tag">Paso 1</span>
+          </div>
+          <input id="raw_banks" class="file-hidden" type="file" accept=".xlsx,.xls" multiple />
+          <label for="raw_banks" class="drop" title="Seleccionar archivos crudos">
+            <div class="drop-inner">
+              <div class="drop-icon">⇪</div>
+              <div class="drop-title">Soltar archivos o hacer clic</div>
+              <div class="drop-subtitle">Acepta múltiples extractos en `.xlsx` o `.xls`.</div>
+              <div id="raw_banks_name" class="name muted">Ningún archivo seleccionado</div>
+            </div>
+          </label>
+        </div>
+
+        <div class="upload-col">
+          <div class="upload-head">
+            <div>
+              <div class="upload-title">Record bancario</div>
+              <div class="upload-note">Libro base donde se van a escribir las conciliaciones de los ingresos bancarios.</div>
+            </div>
+            <span class="upload-tag">Paso 2</span>
+          </div>
+          <input id="record_excel_bank" class="file-hidden" type="file" accept=".xlsx,.xls" />
+          <label for="record_excel_bank" class="drop" title="Seleccionar record bancario">
+            <div class="drop-inner">
+              <div class="drop-icon">▣</div>
+              <div class="drop-title">Seleccionar record bancario</div>
+              <div class="drop-subtitle">Archivo único en `.xlsx` o `.xls`.</div>
+              <div id="record_bank_name" class="name muted">Ningún archivo seleccionado</div>
+            </div>
+          </label>
+        </div>
+
+        <div class="upload-col">
+          <div class="upload-head">
+            <div>
+              <div class="upload-title">Record Mercado Pago</div>
+              <div class="upload-note">Libro base donde se van a escribir las conciliaciones de los ingresos de Mercado Pago.</div>
+            </div>
+            <span class="upload-tag">Paso 3</span>
+          </div>
+          <input id="record_excel_mp" class="file-hidden" type="file" accept=".xlsx,.xls" />
+          <label for="record_excel_mp" class="drop" title="Seleccionar record Mercado Pago">
+            <div class="drop-inner">
+              <div class="drop-icon">▣</div>
+              <div class="drop-title">Seleccionar record Mercado Pago</div>
+              <div class="drop-subtitle">Archivo único en `.xlsx` o `.xls`.</div>
+              <div id="record_mp_name" class="name muted">Ningún archivo seleccionado</div>
+            </div>
+          </label>
+        </div>
+
+        <div id="pdf_upload_col" class="upload-col upload-col--wide hidden">
+          <div class="upload-head">
+            <div>
+              <div class="upload-title">Recibos PDF</div>
+              <div class="upload-note">Solo para modo legacy. Podés subir los PDFs históricos de SALICE y Alarcón.</div>
+            </div>
+            <span class="upload-tag">Legacy</span>
+          </div>
+          <div class="upload-stack">
+            <div>
+              <div class="upload-title" style="font-size:14px;">PDF recibos SALICE</div>
+              <input id="pdf_salice" class="file-hidden" type="file" accept="application/pdf,.pdf" />
+              <label for="pdf_salice" class="drop" title="Seleccionar PDF SALICE">
+                <div class="drop-inner">
+                  <div class="drop-icon">▦</div>
+                  <div class="drop-title">Seleccionar PDF</div>
+                  <div id="salice_name" class="name muted">Ningún archivo seleccionado</div>
+                </div>
+              </label>
+            </div>
+
+            <div>
+              <div class="upload-title" style="font-size:14px;">PDF recibos Alarcón</div>
+              <input id="pdf_alarcon" class="file-hidden" type="file" accept="application/pdf,.pdf" />
+              <label for="pdf_alarcon" class="drop" title="Seleccionar PDF Alarcón">
+                <div class="drop-inner">
+                  <div class="drop-icon">▦</div>
+                  <div class="drop-title">Seleccionar PDF</div>
+                  <div id="alarcon_name" class="name muted">Ningún archivo seleccionado</div>
+                </div>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 10px;"></div>
+
+<div id="cfg_modal" style="display:none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 50;">
+
+  <div class="cfg-box" role="dialog" aria-modal="true" aria-label="Configuración avanzada">
+    <div class="cfg-head">
+      <div style="font-weight:800;">Configuración avanzada</div>
+      <button id="btn_cfg_close" type="button">Cerrar</button>
+    </div>
+    <p class="muted" style="margin:8px 0 0;">
+      Estos parámetros existen para casos raros. En general, no hace falta tocarlos.
+    </p>
+
+    <div class="cfg-section">
+      <div class="cfg-title">API</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>Modo de recibos</label>
+          <select id="receipts_mode" style="width:100%;">
+            <option value="api" selected>Modo API</option>
+            <option value="pdf">Modo legacy (PDF)</option>
+          </select>
+          <div class="muted">En API, los recibos y padrón se leen desde GESI.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cfg-section">
+      <div class="cfg-title">Filtros y búsqueda</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>Margen días para filtrar Excel (±)</label>
+          <input id="margin" type="number" min="0" max="31" value="5" />
+          <div class="muted">Afecta qué movimientos del Excel se analizan y se muestran en “No encontrados”.</div>
+        </div>
+
+        <div class="cfg-field">
+          <label>Dudoso: días (±)</label>
+          <input id="t_days_sus" type="number" min="0" max="31" value="7" />
+          <div class="muted">Se usa para buscar candidatos del banco para cada recibo (pero no amplía “No encontrados”).</div>
+        </div>
+
+        <div class="cfg-field">
+          <label>Máx. opciones por dudoso</label>
+          <input id="max_opts" type="number" min="1" max="4" value="4" />
+          <div class="muted">1 principal + alternativos (solo si hay ambigüedad real).</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cfg-section">
+      <div class="cfg-title">Pesos temporales</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>Peso: multiplicador de días (banco anterior)</label>
+          <input id="day_weight_before" type="number" min="0" max="10000" step="1" value="20" />
+          <div class="muted">Se usa cuando el ingreso bancario es anterior (o mismo día) que el recibo.</div>
+        </div>
+        <div class="cfg-field">
+          <label>Peso: multiplicador de días (banco posterior)</label>
+          <input id="day_weight_after" type="number" min="0" max="10000" step="1" value="35" />
+          <div class="muted">Se usa cuando el ingreso bancario aparece después del recibo (delay).</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cfg-section">
+      <div class="cfg-title">Umbrales y alternativos</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>Umbral: Validado hasta peso</label>
+          <input id="peso_valid" type="number" min="0" max="100000" step="1" value="260" />
+          <div class="muted">Si el peso supera esto, pasa a Dudoso. El importe ahora penaliza de forma no lineal.</div>
+        </div>
+        <div class="cfg-field">
+          <label>Umbral: Dudoso hasta peso</label>
+          <input id="peso_dudoso" type="number" min="0" max="100000" step="1" value="3500" />
+          <div class="muted">Si el peso supera esto, el recibo pasa a No encontrados.</div>
+        </div>
+        <div class="cfg-field">
+          <label>Alternativos: delta peso máximo</label>
+          <input id="alt_delta" type="number" min="0" max="100000" step="1" value="35" />
+          <div class="muted">Solo alternativos con peso ≤ principal + delta.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cfg-section">
+      <div class="cfg-title">Penalizaciones</div>
+      <div class="cfg-grid">
+        <div class="cfg-field">
+          <label>Penalización medio cruzado (MP↔Banco)</label>
+          <input id="mp_penalty" type="number" min="0" max="100000" step="1" value="35" />
+          <div class="muted">No prohíbe el match; solo lo hace menos preferible.</div>
+        </div>
+
+        <div class="cfg-field">
+          <label>Penalización ingreso ya conciliado (columna ok)</label>
+          <input id="preconciled_penalty" type="number" min="0" max="100000" step="1" value="150" />
+          <div class="muted">Si la fila bancaria ya tiene "ok", se suma esta penalización y pasa a Dudoso.</div>
+        </div>
+
+        <div class="cfg-field">
+          <label>Penalización banco cruzado: SALICE → GALICIA</label>
+          <input id="pen_salice_galicia" type="number" min="0" max="100000" step="1" value="45" />
+          <div class="muted">Recibos SALICE tienen prioridad en BBVA. Si cae en Galicia, suma penalización.</div>
+        </div>
+
+        <div class="cfg-field">
+          <label>Penalización banco cruzado: ALARCON → BBVA</label>
+          <input id="pen_alarcon_bbva" type="number" min="0" max="100000" step="1" value="45" />
+          <div class="muted">Recibos Alarcón tienen prioridad en Galicia. Si cae en BBVA, suma penalización.</div>
+        </div>
+
+        <div class="cfg-field">
+          <label>Regla CUIT (compatibilidad)</label>
+          <input id="cuit_mismatch_penalty" type="number" min="0" max="100000" step="1" value="0" />
+          <div class="muted">En GBA no suma peso. El CUIT se usa para restringir candidatos plausibles cuando existe coincidencia.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cfg-section">
+      <div class="cfg-title">Desarrollo</div>
+      <div class="cfg-grid">
+        <div class="cfg-field cfg-span-2">
+          <label>Mostrar columna Peso</label>
+          <div style="display:flex; align-items:center; gap:10px; margin-top:6px;">
+            <input id="show_peso" type="checkbox" />
+            <span class="muted">Solo útil para desarrollo; por defecto se oculta.</span>
+          </div>
+        </div>
+
+        <div class="cfg-field cfg-span-2">
+          <label>Mostrar columnas CUIT</label>
+          <div style="display:flex; align-items:center; gap:10px; margin-top:6px;">
+            <input id="show_cuit" type="checkbox" />
+            <span class="muted">Toggle para mostrar CUIT recibo/CUIT ingreso. Por defecto apagado.</span>
+          </div>
+        </div>
+
+        <div class="cfg-field cfg-span-2">
+          <label>Guardar configuración en este dispositivo</label>
+          <div style="display:flex; align-items:center; gap:10px; margin-top:6px;">
+            <input id="persist_cfg" type="checkbox" />
+            <span class="muted">Si lo activás y guardás, al volver a entrar desde este dispositivo se mantienen los valores.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cfg-actions">
+      <span id="cfg_save_status" class="muted" style="margin-right:auto;"></span>
+      <button id="btn_cfg_reset" type="button">Restaurar defaults</button>
+      <button id="btn_cfg_save" type="button">Guardar</button>
+      <button id="btn_cfg_apply" type="button">Aplicar</button>
+    </div>
+  </div>
+</div>
+
+</div>
+      </div>
+
+      <div id="api_range_panel" class="range-panel">
+        <div class="range-head">
+          <div>
+            <div class="range-title">Rango de recibos</div>
+            <div class="range-note">Elegí manualmente desde qué fecha hasta qué fecha querés que el programa busque los recibos.</div>
+          </div>
+          <div class="range-badge">Selección manual</div>
+        </div>
+        <div class="range-grid">
+          <div class="range-field">
+            <label for="api_start_date">Desde</label>
+            <div class="date-control">
+              <input id="api_start_date" type="hidden" />
+              <button id="api_start_date_btn" type="button" class="date-trigger is-empty">
+                <span class="date-trigger-main">
+                  <span class="date-trigger-label">Fecha inicial</span>
+                  <span id="api_start_date_value" class="date-trigger-value">Seleccionar fecha</span>
+                </span>
+                <span class="date-trigger-icon">▦</span>
+              </button>
+              <div id="api_start_date_popover" class="date-popover hidden"></div>
+            </div>
+            <div class="date-actions">
+              <button id="api_start_date_clear" type="button" class="date-clear">Limpiar</button>
+            </div>
+          </div>
+          <div class="range-field">
+            <label for="api_end_date">Hasta</label>
+            <div class="date-control">
+              <input id="api_end_date" type="hidden" />
+              <button id="api_end_date_btn" type="button" class="date-trigger is-empty">
+                <span class="date-trigger-main">
+                  <span class="date-trigger-label">Fecha final</span>
+                  <span id="api_end_date_value" class="date-trigger-value">Seleccionar fecha</span>
+                </span>
+                <span class="date-trigger-icon">▦</span>
+              </button>
+              <div id="api_end_date_popover" class="date-popover hidden"></div>
+            </div>
+            <div class="date-actions">
+              <button id="api_end_date_clear" type="button" class="date-clear">Limpiar</button>
+            </div>
+          </div>
+        </div>
+        <div class="range-footer">
+          <div class="range-note">Si dejás ambos campos vacíos, el programa busca los recibos de forma automática.</div>
+          <div id="range_summary" class="range-summary">Rango automático</div>
+        </div>
+      </div>
+
+      <div class="action-row">
+        <button id="run" class="btn-primary">Comparar</button>
+        <button id="dl_user_xlsx" type="button" class="btn-secondary" disabled>Descargar validados</button>
+        <button id="dl_noencontrados_xlsx" type="button" class="btn-secondary" disabled>Descargar no encontrados</button>
+        <span id="status" class="muted"></span>
+      </div>
+      <div id="error" class="error" style="margin-top: 10px;"></div>
+    </div>
+
+    <!-- Meta ahora se abre desde el menú -->
+  </div>
+
+  <div id="meta_modal" style="display:none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 55;">
+    <div style="background:#fff; max-width: 860px; margin: 7vh auto; padding: 18px; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);">
+      <div style="display:flex; justify-content: space-between; align-items:center; gap:10px;">
+        <div><b>Meta</b></div>
+        <button id="btn_meta_close" type="button">Cerrar</button>
+      </div>
+      <div style="margin-top: 10px; display:flex; justify-content:flex-end;">
+        <button id="dl_xlsx" type="button" disabled>Descargar XLSX desarrollador</button>
+      </div>
+      <pre id="meta" class="muted" style="white-space: pre-wrap; margin: 10px 0 0; max-height: 60vh; overflow:auto;"></pre>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2><span class="pill ok">Validados</span> <span id="cnt_ok" class="muted"></span></h2>
+    <div class="scroll"><table id="tbl_ok"></table></div>
+  </div>
+  <div class="section">
+    <h2 style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+      <span class="pill warn">Dudosos</span>
+      <span id="cnt_warn" class="muted"></span>
+    </h2>
+    <div class="scroll"><table id="tbl_warn"></table></div>
+  </div>
+  <div class="section">
+    <h2><span class="pill bad">No encontrados</span> <span id="cnt_bad" class="muted"></span></h2>
+    <div class="scroll"><table id="tbl_bad"></table></div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const nf = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const dfDate = new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+    const dfMonth = new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    const WEEKDAYS = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do'];
+    const DATE_PICKER_IDS = ['api_start_date', 'api_end_date'];
+    const datePickerState = {
+      api_start_date: { monthIso: null },
+      api_end_date: { monthIso: null },
+    };
+    let activeDatePickerId = null;
+
+    function pad2(n) {
+      return String(n).padStart(2, '0');
+    }
+
+    function isoToday() {
+      const now = new Date();
+      return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+    }
+
+    function isoToUtcDate(iso) {
+      if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return null;
+      const [y, m, d] = String(iso).split('-').map(Number);
+      return new Date(Date.UTC(y, m - 1, d));
+    }
+
+    function utcDateToIso(d) {
+      if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '';
+      return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+    }
+
+    function addUtcMonths(d, delta) {
+      return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + delta, 1));
+    }
+
+    function monthStartIso(iso) {
+      const d = isoToUtcDate(iso);
+      if (!d) return null;
+      return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-01`;
+    }
+
+    function formatDateDisplay(iso) {
+      const d = isoToUtcDate(iso);
+      return d ? dfDate.format(d) : 'Seleccionar fecha';
+    }
+
+    function getDateConstraints(id) {
+      const today = isoToday();
+      if (id === 'api_end_date') {
+        return {
+          min: $("api_start_date").value || null,
+          max: today,
+        };
+      }
+      return {
+        min: null,
+        max: $("api_end_date").value || today,
+      };
+    }
+
+    function isIsoSelectable(iso, constraints) {
+      if (!iso) return false;
+      if (constraints.min && iso < constraints.min) return false;
+      if (constraints.max && iso > constraints.max) return false;
+      return true;
+    }
+
+    function monthHasSelectableDay(monthDate, constraints) {
+      const year = monthDate.getUTCFullYear();
+      const month = monthDate.getUTCMonth();
+      const totalDays = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+      for (let day = 1; day <= totalDays; day += 1) {
+        const iso = `${year}-${pad2(month + 1)}-${pad2(day)}`;
+        if (isIsoSelectable(iso, constraints)) return true;
+      }
+      return false;
+    }
+
+    function updateDateTrigger(id) {
+      const value = $(id).value || '';
+      const btn = $(`${id}_btn`);
+      const valueEl = $(`${id}_value`);
+      if (!btn || !valueEl) return;
+      valueEl.textContent = formatDateDisplay(value);
+      btn.classList.toggle('is-empty', !value);
+      btn.classList.toggle('is-active', activeDatePickerId === id);
+    }
+
+    function syncRangeSummary() {
+      const from = $("api_start_date").value || '';
+      const to = $("api_end_date").value || '';
+      const el = $("range_summary");
+      if (!el) return;
+      if (from && to) {
+        el.textContent = `Consultando del ${formatDateDisplay(from)} al ${formatDateDisplay(to)}`;
+      } else if (from) {
+        el.textContent = `Desde ${formatDateDisplay(from)} en adelante`;
+      } else if (to) {
+        el.textContent = `Hasta ${formatDateDisplay(to)}`;
+      } else {
+        el.textContent = 'Rango automático';
+      }
+    }
+
+    function normalizeDateRange(changedId = null) {
+      const start = $("api_start_date").value || '';
+      const end = $("api_end_date").value || '';
+      const today = isoToday();
+
+      if (start && start > today) $("api_start_date").value = today;
+      if (end && end > today) $("api_end_date").value = today;
+
+      const nextStart = $("api_start_date").value || '';
+      const nextEnd = $("api_end_date").value || '';
+      if (nextStart && nextEnd && nextEnd < nextStart) {
+        if (changedId === 'api_start_date') $("api_end_date").value = nextStart;
+        else $("api_start_date").value = nextEnd;
+      }
+      updateDateTrigger('api_start_date');
+      updateDateTrigger('api_end_date');
+      syncRangeSummary();
+      if (activeDatePickerId) renderDatePopover(activeDatePickerId);
+    }
+
+    function closeDatePopover() {
+      if (!activeDatePickerId) return;
+      const prev = activeDatePickerId;
+      activeDatePickerId = null;
+      DATE_PICKER_IDS.forEach((id) => {
+        const pop = $(`${id}_popover`);
+        if (pop) pop.classList.add('hidden');
+        updateDateTrigger(id);
+      });
+      datePickerState[prev].monthIso = null;
+    }
+
+    function selectDate(id, iso) {
+      $(id).value = iso || '';
+      normalizeDateRange(id);
+      closeDatePopover();
+    }
+
+    function buildDayButton(id, iso, label, classes, disabled) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `date-day ${classes.join(' ')}`.trim();
+      btn.textContent = String(label);
+      btn.disabled = !!disabled;
+      if (!disabled) {
+        btn.addEventListener('click', () => selectDate(id, iso));
+      }
+      return btn;
+    }
+
+    function renderDatePopover(id) {
+      const pop = $(`${id}_popover`);
+      if (!pop) return;
+      const selectedIso = $(id).value || '';
+      const constraints = getDateConstraints(id);
+      let monthIso = datePickerState[id].monthIso;
+      if (!monthIso) {
+        monthIso = monthStartIso(selectedIso || constraints.max || isoToday());
+        datePickerState[id].monthIso = monthIso;
+      }
+      const monthDate = isoToUtcDate(monthIso || isoToday());
+      if (!monthDate) return;
+
+      pop.innerHTML = '';
+      pop.classList.remove('hidden');
+
+      const header = document.createElement('div');
+      header.className = 'date-popover-header';
+
+      const monthLabel = document.createElement('div');
+      monthLabel.className = 'date-month';
+      monthLabel.textContent = dfMonth.format(monthDate).replace('.', '');
+
+      const nav = document.createElement('div');
+      nav.className = 'date-nav';
+
+      const prevMonth = addUtcMonths(monthDate, -1);
+      const nextMonth = addUtcMonths(monthDate, 1);
+
+      const prevBtn = document.createElement('button');
+      prevBtn.type = 'button';
+      prevBtn.textContent = '‹';
+      prevBtn.disabled = !monthHasSelectableDay(prevMonth, constraints);
+      prevBtn.addEventListener('click', () => {
+        datePickerState[id].monthIso = utcDateToIso(prevMonth);
+        renderDatePopover(id);
+      });
+
+      const nextBtn = document.createElement('button');
+      nextBtn.type = 'button';
+      nextBtn.textContent = '›';
+      nextBtn.disabled = !monthHasSelectableDay(nextMonth, constraints);
+      nextBtn.addEventListener('click', () => {
+        datePickerState[id].monthIso = utcDateToIso(nextMonth);
+        renderDatePopover(id);
+      });
+
+      nav.appendChild(prevBtn);
+      nav.appendChild(nextBtn);
+      header.appendChild(monthLabel);
+      header.appendChild(nav);
+      pop.appendChild(header);
+
+      const weekdays = document.createElement('div');
+      weekdays.className = 'date-weekdays';
+      WEEKDAYS.forEach((w) => {
+        const cell = document.createElement('div');
+        cell.textContent = w;
+        weekdays.appendChild(cell);
+      });
+      pop.appendChild(weekdays);
+
+      const days = document.createElement('div');
+      days.className = 'date-days';
+      const year = monthDate.getUTCFullYear();
+      const month = monthDate.getUTCMonth();
+      const firstWeekday = (monthDate.getUTCDay() + 6) % 7;
+      const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+      const prevMonthDays = new Date(Date.UTC(year, month, 0)).getUTCDate();
+      const todayIso = isoToday();
+
+      for (let i = 0; i < 42; i += 1) {
+        let cellDate;
+        let outside = false;
+        if (i < firstWeekday) {
+          outside = true;
+          cellDate = new Date(Date.UTC(year, month - 1, prevMonthDays - firstWeekday + i + 1));
+        } else if (i >= firstWeekday + daysInMonth) {
+          outside = true;
+          cellDate = new Date(Date.UTC(year, month + 1, i - firstWeekday - daysInMonth + 1));
+        } else {
+          cellDate = new Date(Date.UTC(year, month, i - firstWeekday + 1));
+        }
+        const iso = utcDateToIso(cellDate);
+        const classes = [];
+        if (outside) classes.push('is-outside');
+        if (iso === selectedIso) classes.push('is-selected');
+        if (iso === todayIso) classes.push('is-today');
+        const disabled = !isIsoSelectable(iso, constraints);
+        days.appendChild(buildDayButton(id, iso, cellDate.getUTCDate(), classes, disabled));
+      }
+      pop.appendChild(days);
+      updateDateTrigger(id);
+    }
+
+    function toggleDatePopover(id) {
+      if (activeDatePickerId === id) {
+        closeDatePopover();
+        return;
+      }
+      activeDatePickerId = id;
+      DATE_PICKER_IDS.forEach((otherId) => {
+        const pop = $(`${otherId}_popover`);
+        if (pop && otherId !== id) pop.classList.add('hidden');
+      });
+      datePickerState[id].monthIso = monthStartIso($(id).value || getDateConstraints(id).max || isoToday());
+      renderDatePopover(id);
+      DATE_PICKER_IDS.forEach(updateDateTrigger);
+    }
+
+    function initDatePickers() {
+      DATE_PICKER_IDS.forEach((id) => {
+        const btn = $(`${id}_btn`);
+        const clearBtn = $(`${id}_clear`);
+        if (btn) btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleDatePopover(id);
+        });
+        if (clearBtn) clearBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          $(id).value = '';
+          normalizeDateRange(id);
+          closeDatePopover();
+        });
+        const pop = $(`${id}_popover`);
+        if (pop) pop.addEventListener('click', (e) => e.stopPropagation());
+        updateDateTrigger(id);
+      });
+      syncRangeSummary();
+      document.addEventListener('click', (e) => {
+        const target = e.target;
+        const insideDateControl = target && target.closest ? target.closest('.date-control, .date-actions') : null;
+        if (!insideDateControl) closeDatePopover();
+      });
+    }
+
+    // V3.7: estado de última corrida + validaciones manuales (promover Dudosos a Validados)
+    let lastData = null;
+    let forcedValidations = [];
+    // índice estable para mantener el orden original al reordenar validados
+    let nextStableIdx = 0;
+    let deletedDudosos = [];
+    const tableSortState = {
+      tbl_ok: { activeColumn: null, direction: null, defaultColumn: null, defaultDirection: 'asc' },
+      tbl_warn: { activeColumn: null, direction: null, defaultColumn: null, defaultDirection: 'asc' },
+      tbl_bad: { activeColumn: null, direction: null, defaultColumn: 'Peso', defaultDirection: 'asc' },
+    };
+
+    // Persistencia local de configuración
+    const STORAGE_KEY = 'conciliador_cfg_v3';
+
+    function readConfigFromUI() {
+      return {
+        receipts_mode: String($("receipts_mode").value || 'api'),
+        api_receipts_days: 4,
+        api_start_date: String($("api_start_date").value || ''),
+        api_end_date: String($("api_end_date").value || ''),
+        margin: Number($("margin").value),
+        t_days_sus: Number($("t_days_sus").value),
+        max_opts: Number($("max_opts").value),
+        day_weight_before: Number($("day_weight_before").value),
+        day_weight_after: Number($("day_weight_after").value),
+        peso_valid: Number($("peso_valid").value),
+        peso_dudoso: Number($("peso_dudoso").value),
+        mp_penalty: Number($("mp_penalty").value),
+        preconciled_penalty: Number($("preconciled_penalty").value),
+        alt_delta: Number($("alt_delta").value),
+        pen_salice_galicia: Number($("pen_salice_galicia").value),
+        pen_alarcon_bbva: Number($("pen_alarcon_bbva").value),
+        cuit_mismatch_penalty: Number($("cuit_mismatch_penalty").value),
+        show_peso: !!$("show_peso").checked,
+        show_cuit: !!$("show_cuit").checked,
+        persist_cfg: !!$("persist_cfg").checked,
+      };
+    }
+
+    function applyConfigToUI(cfg) {
+      if (!cfg || typeof cfg !== 'object') return;
+      const setIf = (id, key) => {
+        if (cfg[key] === undefined || cfg[key] === null) return;
+        const el = $(id);
+        if (!el) return;
+        el.value = String(cfg[key]);
+      };
+      setIf('api_start_date', 'api_start_date');
+      setIf('api_end_date', 'api_end_date');
+      setIf('margin', 'margin');
+      setIf('t_days_sus', 't_days_sus');
+      setIf('max_opts', 'max_opts');
+      setIf('day_weight_before', 'day_weight_before');
+      setIf('day_weight_after', 'day_weight_after');
+      setIf('peso_valid', 'peso_valid');
+      setIf('peso_dudoso', 'peso_dudoso');
+      setIf('mp_penalty', 'mp_penalty');
+      setIf('preconciled_penalty', 'preconciled_penalty');
+      setIf('alt_delta', 'alt_delta');
+      setIf('pen_salice_galicia', 'pen_salice_galicia');
+      setIf('pen_alarcon_bbva', 'pen_alarcon_bbva');
+      setIf('cuit_mismatch_penalty', 'cuit_mismatch_penalty');
+      if (cfg.show_peso !== undefined) $("show_peso").checked = !!cfg.show_peso;
+      if (cfg.show_cuit !== undefined) $("show_cuit").checked = !!cfg.show_cuit;
+      if (cfg.persist_cfg !== undefined) $("persist_cfg").checked = !!cfg.persist_cfg;
+      if (cfg.receipts_mode !== undefined) $("receipts_mode").value = String(cfg.receipts_mode || 'api');
+      normalizeDateRange();
+      refreshReceiptsModeUI();
+    }
+
+    function isApiMode() {
+      return String($("receipts_mode").value || 'api') === 'api';
+    }
+
+    function refreshReceiptsModeUI() {
+      const api = isApiMode();
+      const uploads = document.querySelector('.uploads');
+      const rangePanel = $("api_range_panel");
+      $("pdf_upload_col").classList.toggle('hidden', api);
+      if (rangePanel) rangePanel.classList.toggle('hidden', !api);
+      if (uploads) uploads.classList.toggle('uploads--api', api);
+      if (!api) closeDatePopover();
+    }
+
+    function setCfgStatus(msg) {
+      const el = $("cfg_save_status");
+      if (!el) return;
+      el.textContent = msg || '';
+      if (msg) {
+        window.clearTimeout(setCfgStatus._t);
+        setCfgStatus._t = window.setTimeout(() => { el.textContent = ''; }, 1800);
+      }
+    }
+
+    function saveConfigToLocal() {
+      const shouldPersist = $("persist_cfg").checked;
+      if (!shouldPersist) {
+        localStorage.removeItem(STORAGE_KEY);
+        setCfgStatus('');
+        return;
+      }
+      const cfg = readConfigFromUI();
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+        setCfgStatus('Guardado.');
+      } catch (e) {
+        setCfgStatus('No se pudo guardar.');
+      }
+    }
+
+    function loadConfigFromLocal() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const cfg = JSON.parse(raw);
+        applyConfigToUI(cfg);
+      } catch (_) {
+        // Si hay basura en storage, lo limpiamos.
+        localStorage.removeItem(STORAGE_KEY);
+      }
+    }
+
+    // Upload UI labels + drag & drop
+    function setFileName(inputId, labelId, opts = null) {
+      const inp = $(inputId);
+      const lab = $(labelId);
+      if (!inp || !lab) return;
+      const multi = !!(opts && opts.multi);
+      let name = "Ningún archivo seleccionado";
+      if (inp.files && inp.files.length) {
+        if (multi) {
+          const names = Array.from(inp.files).map(f => f.name);
+          name = `${names.length} archivo(s): ${names.join(", ")}`;
+        } else {
+          name = inp.files[0].name;
+        }
+      }
+      lab.textContent = name;
+      lab.classList.toggle('muted', !(inp.files && inp.files.length));
+    }
+    ['raw_banks','record_excel_bank','record_excel_mp','pdf_salice','pdf_alarcon'].forEach(id => {
+      const map = {
+        raw_banks:'raw_banks_name',
+        record_excel_bank:'record_bank_name',
+        record_excel_mp:'record_mp_name',
+        pdf_salice:'salice_name',
+        pdf_alarcon:'alarcon_name',
+      };
+      const el = $(id);
+      if (el) {
+        el.addEventListener('change', () => setFileName(id, map[id], { multi: id === 'raw_banks' }));
+      }
+      // init
+      setFileName(id, map[id], { multi: id === 'raw_banks' });
+    });
+
+    // Enable drag & drop onto the visible drop areas.
+    // Note: browsers don't allow setting input.files directly in all cases,
+    // so we use a DataTransfer to assign the FileList safely.
+    function bindDropArea(inputId, nameId) {
+      const inp = $(inputId);
+      const nameEl = $(nameId);
+      if (!inp || !nameEl) return;
+      // The drop target is the <label class="drop" for this input.
+      const dropEl = document.querySelector(`label.drop[for="${inputId}"]`);
+      if (!dropEl) return;
+
+      const prevent = (e) => { e.preventDefault(); e.stopPropagation(); };
+      dropEl.addEventListener('dragenter', (e) => { prevent(e); dropEl.classList.add('dragover'); });
+      dropEl.addEventListener('dragover', (e) => { prevent(e); dropEl.classList.add('dragover'); });
+      dropEl.addEventListener('dragleave', (e) => { prevent(e); dropEl.classList.remove('dragover'); });
+      dropEl.addEventListener('drop', (e) => {
+        prevent(e);
+        dropEl.classList.remove('dragover');
+        const files = e.dataTransfer?.files;
+        if (!files || files.length === 0) return;
+
+        const dt = new DataTransfer();
+        if (inputId === 'raw_banks') {
+          Array.from(files).forEach((f) => {
+            if (/\.(xlsx|xls)$/i.test(f.name)) dt.items.add(f);
+          });
+          if (dt.items.length === 0) return;
+        } else {
+          const f0 = files[0];
+          if (!f0) return;
+          if (inputId === 'record_excel_bank' || inputId === 'record_excel_mp') {
+            if (!/\.(xlsx|xls)$/i.test(f0.name)) return;
+          } else {
+            if (!/\.(pdf)$/i.test(f0.name)) return;
+          }
+          dt.items.add(f0);
+        }
+        inp.files = dt.files;
+        inp.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    }
+
+    bindDropArea('raw_banks', 'raw_banks_name');
+    bindDropArea('record_excel_bank', 'record_bank_name');
+    bindDropArea('record_excel_mp', 'record_mp_name');
+    bindDropArea('pdf_salice', 'salice_name');
+    bindDropArea('pdf_alarcon', 'alarcon_name');
+
+    function _sortPrimitive(raw) {
+      if (raw === null || raw === undefined) return { kind: 'empty', value: Number.POSITIVE_INFINITY };
+      if (typeof raw === 'number' && Number.isFinite(raw)) return { kind: 'number', value: raw };
+      const txt = String(raw).trim();
+      if (!txt) return { kind: 'empty', value: Number.POSITIVE_INFINITY };
+      if (/^\d{4}-\d{2}-\d{2}$/.test(txt)) {
+        const d = Date.parse(`${txt}T00:00:00Z`);
+        if (Number.isFinite(d)) return { kind: 'date', value: d };
+      }
+      const normalized = txt.replace(/\./g, '').replace(',', '.');
+      const maybeNum = Number(normalized);
+      if (Number.isFinite(maybeNum) && /^-?[\d.,]+$/.test(txt)) {
+        return { kind: 'number', value: maybeNum };
+      }
+      return { kind: 'text', value: txt.toLocaleLowerCase('es-AR') };
+    }
+
+    function compareTableRows(a, b, column) {
+      const pa = _sortPrimitive(a ? a[column] : undefined);
+      const pb = _sortPrimitive(b ? b[column] : undefined);
+      if (pa.kind === 'empty' && pb.kind !== 'empty') return 1;
+      if (pa.kind !== 'empty' && pb.kind === 'empty') return -1;
+      if ((pa.kind === 'number' || pa.kind === 'date') && (pb.kind === 'number' || pb.kind === 'date')) {
+        if (pa.value !== pb.value) return pa.value - pb.value;
+      } else {
+        const sa = String(pa.value);
+        const sb = String(pb.value);
+        const cmp = sa.localeCompare(sb, 'es-AR', { numeric: true, sensitivity: 'base' });
+        if (cmp !== 0) return cmp;
+      }
+      return 0;
+    }
+
+    function getSortedRows(tableId, rows) {
+      const state = tableSortState[tableId] || { activeColumn: null, direction: null, defaultColumn: null, defaultDirection: 'asc' };
+      const col = state.activeColumn || state.defaultColumn;
+      const direction = state.activeColumn ? (state.direction || 'asc') : (state.defaultDirection || 'asc');
+      const indexed = (rows || []).map((row, idx) => ({ row, idx }));
+      if (!col) return indexed.map((x) => x.row);
+      indexed.sort((a, b) => {
+        const cmp = compareTableRows(a.row, b.row, col);
+        if (cmp !== 0) return direction === 'desc' ? -cmp : cmp;
+        return a.idx - b.idx;
+      });
+      return indexed.map((x) => x.row);
+    }
+
+    function renderCurrentTables() {
+      if (!lastData) return;
+      renderTable($("tbl_ok"), lastData.validados, { excludeCols: ['Motivo', 'Motivos', 'Tipo fila', 'Ranking'] });
+      renderTable($("tbl_warn"), lastData.dudosos, {
+        excludeCols: ['Ranking'],
+        action: true,
+        actionHeader: 'Acción',
+        actions: [
+          { label: 'Validar', onClick: (_idx, row) => promoteDudoso(row) },
+          { label: 'Borrar', onClick: (_idx, row) => deleteDudoso(row) },
+        ],
+      });
+      renderTable($("tbl_bad"), lastData.no_encontrados, {
+        action: true,
+        actionHeader: 'Acción',
+        actionLabel: 'Borrar',
+        onAction: (_idx, row) => removeNoEncontrado(row),
+      });
+    }
+
+    function toggleTableSort(tableId, column) {
+      const state = tableSortState[tableId];
+      if (!state) return;
+      if (state.activeColumn !== column) {
+        state.activeColumn = column;
+        state.direction = 'asc';
+      } else if (state.direction === 'asc') {
+        state.direction = 'desc';
+      } else {
+        state.activeColumn = null;
+        state.direction = null;
+      }
+      renderCurrentTables();
+    }
+
+    function renderTable(el, rows, opts = null) {
+      el.innerHTML = "";
+      if (!rows || rows.length === 0) {
+        el.innerHTML = "<tr><td class='muted'>Sin filas</td></tr>";
+        return;
+      }
+      const tableId = el.id || '';
+      const exclude = (opts && Array.isArray(opts.excludeCols)) ? opts.excludeCols : [];
+      const cols = Array.from(new Set(rows.flatMap(r => Object.keys(r))))
+        .filter(c => !exclude.includes(c) && !String(c).startsWith('__'));
+      const actionHeader = (opts && opts.action) ? (opts.actionHeader || 'Acción') : null;
+      if (actionHeader) cols.push(actionHeader);
+      const sortableCols = cols.filter((c) => c !== actionHeader);
+      const sortedRows = getSortedRows(tableId, rows);
+      const activeColumn = (tableSortState[tableId] || {}).activeColumn || null;
+      const activeDirection = (tableSortState[tableId] || {}).direction || null;
+      const thead = document.createElement('thead');
+      const trh = document.createElement('tr');
+      cols.forEach(c => {
+        const th = document.createElement('th');
+        if (sortableCols.includes(c)) {
+          th.classList.add('sortable');
+          if (activeColumn === c) th.classList.add('is-active');
+          if (activeColumn === c && activeDirection === 'desc') th.classList.add('is-desc');
+          const inner = document.createElement('span');
+          inner.className = 'th-inner';
+          const label = document.createElement('span');
+          label.textContent = c;
+          const arrow = document.createElement('span');
+          arrow.className = 'sort-arrow';
+          inner.appendChild(label);
+          inner.appendChild(arrow);
+          th.appendChild(inner);
+          th.addEventListener('click', () => toggleTableSort(tableId, c));
+        } else {
+          th.textContent = c;
+        }
+        trh.appendChild(th);
+      });
+      thead.appendChild(trh);
+      el.appendChild(thead);
+      const tbody = document.createElement('tbody');
+      sortedRows.forEach((r, idx) => {
+        const tr = document.createElement('tr');
+        cols.forEach(c => {
+          const td = document.createElement('td');
+          if (actionHeader && c === actionHeader) {
+            const canShowAction = !opts || typeof opts.actionWhen !== 'function' ? true : !!opts.actionWhen(r, idx);
+            if (canShowAction) {
+              const actionsWrap = document.createElement('div');
+              actionsWrap.style.display = 'flex';
+              actionsWrap.style.flexDirection = 'column';
+              actionsWrap.style.alignItems = 'center';
+              actionsWrap.style.justifyContent = 'center';
+              actionsWrap.style.gap = '8px';
+              const actions = Array.isArray(opts.actions) && opts.actions.length
+                ? opts.actions
+                : [{ label: (opts.actionLabel || 'Validar'), onClick: opts.onAction }];
+              actions.forEach((a) => {
+                if (!a || typeof a.onClick !== 'function') return;
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'btn-mini';
+                btn.textContent = a.label || 'Acción';
+                btn.addEventListener('click', () => a.onClick(idx, r));
+                actionsWrap.appendChild(btn);
+              });
+              td.style.textAlign = 'center';
+              td.appendChild(actionsWrap);
+            }
+            tr.appendChild(td);
+            return;
+          }
+          const raw = r[c];
+          if (raw === null || raw === undefined) {
+            td.textContent = "";
+          } else {
+            const isMoneyCol = /Importe|Dif importe|Peso/i.test(c);
+            const isNumber = typeof raw === 'number' || (!!raw && !isNaN(raw) && raw.trim && raw.trim() !== '' && !isNaN(Number(raw)));
+            if (isMoneyCol && isNumber) {
+              td.textContent = nf.format(Number(raw));
+            } else {
+              td.textContent = String(raw);
+            }
+          }
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      el.appendChild(tbody);
+    }
+
+    function dudosoKey(row) {
+      return {
+        fila_excel: row ? row['Fila Excel'] : undefined,
+        nro_recibo: row ? row['Nro recibo'] : undefined,
+        medio_pago: row ? row['Medio de pago'] : undefined,
+      };
+    }
+
+    function getPrincipalForCase(row, dudososRows) {
+      if (!row || !Array.isArray(dudososRows)) return null;
+      const cid = row.__case_id ? String(row.__case_id) : '';
+      if (!cid) return null;
+      for (const r of dudososRows) {
+        if (!r) continue;
+        if (String(r.__case_id || '') !== cid) continue;
+        if (String(r['Tipo fila'] || '') === 'PRINCIPAL') return r;
+      }
+      return null;
+    }
+
+    function buildForceValidation(row, principalRef) {
+      const base = row || {};
+      const principal = principalRef || {};
+      const fila = base['Fila Excel'];
+      const nroRecibo = (base['Nro recibo'] && String(base['Nro recibo']).trim() !== '')
+        ? base['Nro recibo']
+        : principal['Nro recibo'];
+      const medioPago = (base['Medio de pago'] && String(base['Medio de pago']).trim() !== '')
+        ? base['Medio de pago']
+        : principal['Medio de pago'];
+
+      return {
+        case_id: base.__case_id,
+        fila_excel: fila,
+        ranking: base['Ranking'],
+        nro_recibo: nroRecibo,
+        medio_pago: medioPago,
+      };
+    }
+
+    function buildDropDudoso(row, principalRef) {
+      const base = row || {};
+      const principal = principalRef || {};
+      const fila = base['Fila Excel'];
+      const nroRecibo = (base['Nro recibo'] && String(base['Nro recibo']).trim() !== '')
+        ? base['Nro recibo']
+        : principal['Nro recibo'];
+      const medioPago = (base['Medio de pago'] && String(base['Medio de pago']).trim() !== '')
+        ? base['Medio de pago']
+        : principal['Medio de pago'];
+      return {
+        case_id: base.__case_id,
+        fila_excel: fila,
+        ranking: base['Ranking'],
+        nro_recibo: nroRecibo,
+        medio_pago: medioPago,
+      };
+    }
+
+    function bankSig(row) {
+      if (!row) return '';
+      return [
+        String(row['Origen'] || ''),
+        String(row['Fila Excel'] || ''),
+        String(row['Fecha movimiento'] || ''),
+        String(row['Importe movimiento'] || ''),
+      ].join('||');
+    }
+
+    function extractReciboNumber(row) {
+      if (!row) return NaN;
+      const candidates = [
+        'Nro recibo',
+        'Nro. recibo',
+        'Número recibo',
+        'Numero recibo',
+        'Recibo',
+        'recibo',
+      ];
+      for (const k of candidates) {
+        if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
+          const s = String(row[k]);
+          const m = s.match(/\d+/g);
+          if (!m) continue;
+          const n = Number(m.join(''));
+          if (Number.isFinite(n)) return n;
+        }
+      }
+      return NaN;
+    }
+
+    function promoteDudoso(row) {
+      if (!lastData || !Array.isArray(lastData.dudosos) || !Array.isArray(lastData.validados)) return;
+      if (!row) return;
+      const principalRef = getPrincipalForCase(row, lastData.dudosos);
+
+      // Guardar override para exportación
+      const fv = buildForceValidation(row, principalRef);
+      if (fv.fila_excel !== undefined && fv.fila_excel !== null) {
+        const sig = `${String(fv.case_id || '')}||${String(fv.fila_excel || '')}||${String(fv.ranking || '')}`;
+        const exists = forcedValidations.some(x => `${String(x.case_id || '')}||${String(x.fila_excel || '')}||${String(x.ranking || '')}` === sig);
+        if (!exists) forcedValidations.push(fv);
+      }
+
+      const caseId = row && row.__case_id ? String(row.__case_id) : '';
+      const selectedBankSig = bankSig(row);
+
+      // Mover en UI: al validar principal, remover también sus alternativas.
+      if (caseId) {
+        lastData.dudosos = (lastData.dudosos || []).filter((r) => String((r && r.__case_id) || '') !== caseId);
+      } else {
+        lastData.dudosos = (lastData.dudosos || []).filter((r) => r !== row);
+      }
+      // Si se validó un ingreso bancario, quitar cualquier otro dudoso que use ese mismo ingreso.
+      if (selectedBankSig) {
+        lastData.dudosos = (lastData.dudosos || []).filter((r) => bankSig(r) !== selectedBankSig);
+      }
+
+      // En Validados no queremos "Motivo" (propio de Dudosos)
+      const cleanRow = { ...row };
+      if (principalRef) {
+        // Si el usuario valida un alternativo, completamos datos de recibo del principal.
+        for (const key of ['Empresa', 'Nro recibo', 'Nro cliente', 'Cliente', 'Medio de pago', 'Fecha recibo', 'Importe recibo', 'Divisor']) {
+          if (cleanRow[key] === undefined || cleanRow[key] === null || String(cleanRow[key]).trim() === '') {
+            cleanRow[key] = principalRef[key];
+          }
+        }
+        cleanRow['Tipo fila'] = 'PRINCIPAL';
+        cleanRow['Ranking'] = 1;
+      }
+      delete cleanRow['Motivo'];
+      delete cleanRow['Motivos'];
+
+      // asignar índice estable para que el sort no "desordene" lo existente
+      cleanRow.__stable_idx = nextStableIdx++;
+
+      lastData.validados.push(cleanRow);
+
+      // Re-ordenar Validados para que quede integrado con el resto.
+      // Orden: Nro recibo ascendente. Desempate por orden estable.
+      lastData.validados.sort((a, b) => {
+        const ra = extractReciboNumber(a);
+        const rb = extractReciboNumber(b);
+        const raOk = Number.isFinite(ra);
+        const rbOk = Number.isFinite(rb);
+        if (raOk && rbOk) {
+          if (ra !== rb) return ra - rb;
+        } else if (raOk && !rbOk) {
+          return -1;
+        } else if (!raOk && rbOk) {
+          return 1;
+        }
+        const ia = Number(a && a.__stable_idx);
+        const ib = Number(b && b.__stable_idx);
+        return ia - ib;
+      });
+
+      $("cnt_ok").textContent = `(${lastData.validados.length})`;
+      $("cnt_warn").textContent = `(${lastData.dudosos.length})`;
+      renderCurrentTables();
+    }
+
+    function deleteDudoso(row) {
+      if (!lastData || !Array.isArray(lastData.dudosos)) return;
+      if (!row) return;
+      const principalRef = getPrincipalForCase(row, lastData.dudosos);
+      const dd = buildDropDudoso(row, principalRef);
+      if (dd.fila_excel !== undefined && dd.fila_excel !== null) {
+        const sig = `${String(dd.case_id || '')}||${String(dd.fila_excel || '')}||${String(dd.ranking || '')}`;
+        const exists = deletedDudosos.some(x => `${String(x.case_id || '')}||${String(x.fila_excel || '')}||${String(x.ranking || '')}` === sig);
+        if (!exists) deletedDudosos.push(dd);
+      }
+      const caseId = row && row.__case_id ? String(row.__case_id) : '';
+      if (caseId) {
+        lastData.dudosos = (lastData.dudosos || []).filter((r) => String((r && r.__case_id) || '') !== caseId);
+      } else {
+        lastData.dudosos = (lastData.dudosos || []).filter((r) => r !== row);
+      }
+
+      $("cnt_warn").textContent = `(${lastData.dudosos.length})`;
+      renderCurrentTables();
+    }
+
+    function _pesoValue(row) {
+      if (!row) return Number.POSITIVE_INFINITY;
+      const v = row['Peso'];
+      if (typeof v === 'number' && Number.isFinite(v)) return v;
+      if (v === null || v === undefined || String(v).trim() === '') return Number.POSITIVE_INFINITY;
+      const n = Number(String(v).replace(',', '.'));
+      return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+    }
+
+    function removeNoEncontrado(row) {
+      if (!lastData || !Array.isArray(lastData.no_encontrados)) return;
+      const idx = lastData.no_encontrados.indexOf(row);
+      if (idx < 0) return;
+      lastData.no_encontrados.splice(idx, 1);
+      $("cnt_bad").textContent = `(${lastData.no_encontrados.length})`;
+      renderCurrentTables();
+    }
+
+    async function run() {
+      $("error").textContent = "";
+      $("status").textContent = "Procesando...";
+      $("run").disabled = true;
+      try {
+        const rawBanks = Array.from($("raw_banks").files || []);
+        const recordExcelBank = $("record_excel_bank").files[0];
+        const recordExcelMp = $("record_excel_mp").files[0];
+        const pdfSalice = $("pdf_salice").files[0];
+        const pdfAlarcon = $("pdf_alarcon").files[0];
+        const source = isApiMode() ? 'api' : 'pdf';
+        const apiStartDate = encodeURIComponent($("api_start_date").value || '');
+        const apiEndDate = encodeURIComponent($("api_end_date").value || '');
+        if ((!recordExcelBank && !recordExcelMp) || rawBanks.length === 0) {
+          throw new Error("Tenés que seleccionar ingresos crudos y al menos un record.");
+        }
+        if (source === 'pdf' && !pdfSalice && !pdfAlarcon) {
+          throw new Error("En modo legacy, tenés que subir al menos 1 PDF (SALICE o Alarcón).");
+        }
+
+        const margin = encodeURIComponent($("margin").value);
+        const tDaysSus = encodeURIComponent($("t_days_sus").value);
+        const maxOpts = encodeURIComponent($("max_opts").value);
+        const dayWeightBefore = encodeURIComponent($("day_weight_before").value);
+        const dayWeightAfter = encodeURIComponent($("day_weight_after").value);
+        const pesoValid = encodeURIComponent($("peso_valid").value);
+        const pesoDudoso = encodeURIComponent($("peso_dudoso").value);
+        const mpPenalty = encodeURIComponent($("mp_penalty").value);
+        const preconciledPenalty = encodeURIComponent($("preconciled_penalty").value);
+        const penSaliceGalicia = encodeURIComponent($("pen_salice_galicia").value);
+        const penAlarconBbva = encodeURIComponent($("pen_alarcon_bbva").value);
+        const cuitMismatchPenalty = encodeURIComponent($("cuit_mismatch_penalty").value);
+        const altDelta = encodeURIComponent($("alt_delta").value);
+
+        const url = `/compare?margin_days=${margin}`
+          + `&receipts_source=${source}`
+          + (apiStartDate ? `&api_start_date=${apiStartDate}` : '')
+          + (apiEndDate ? `&api_end_date=${apiEndDate}` : '')
+          + `&tolerance_days_suspect=${tDaysSus}`
+          + `&max_options=${maxOpts}`
+          + `&day_weight_bank_before=${dayWeightBefore}`
+          + `&day_weight_bank_after=${dayWeightAfter}`
+          + `&valid_max_peso=${pesoValid}`
+          + `&dudoso_max_peso=${pesoDudoso}`
+          + `&mp_mismatch_penalty=${mpPenalty}`
+          + `&preconciled_penalty=${preconciledPenalty}`
+          + `&penalty_salice_to_galicia=${penSaliceGalicia}`
+          + `&penalty_alarcon_to_bbva=${penAlarconBbva}`
+          + `&cliente_cuit_mismatch_penalty=${cuitMismatchPenalty}`
+          + `&alternatives_cost_delta=${altDelta}`
+          + `&show_peso=${encodeURIComponent($("show_peso").checked ? 1 : 0)}`
+          + `&show_cuit=${encodeURIComponent($("show_cuit").checked ? 1 : 0)}`;
+
+        const form = new FormData();
+        if (recordExcelBank) form.append('record_excel_bank', recordExcelBank);
+        if (recordExcelMp) form.append('record_excel_mp', recordExcelMp);
+        rawBanks.forEach((f) => form.append('raw_bank_files', f));
+        if (source === 'pdf') {
+          if (pdfSalice) form.append('pdf_salice', pdfSalice);
+          if (pdfAlarcon) form.append('pdf_alarcon', pdfAlarcon);
+        }
+
+        const res = await fetch(url, { method: 'POST', body: form });
+        const text = await res.text();
+        if (!res.ok) {
+          let msg = text;
+          try {
+            const j = JSON.parse(text);
+            if (j && j.detail) msg = String(j.detail);
+          } catch (_) {}
+          throw new Error(msg);
+        }
+
+        const data = JSON.parse(text);
+
+        lastData = data;
+        forcedValidations = [];
+        deletedDudosos = [];
+        // inicializar orden estable para validados (mantener el orden original)
+        nextStableIdx = 0;
+        (lastData.validados || []).forEach((r) => {
+          if (r && r.__stable_idx === undefined) r.__stable_idx = nextStableIdx++;
+        });
+
+        $("meta").textContent = JSON.stringify(data.meta, null, 2);
+        $("cnt_ok").textContent = `(${data.validados.length})`;
+        $("cnt_warn").textContent = `(${data.dudosos.length})`;
+        $("cnt_bad").textContent = `(${data.no_encontrados.length})`;
+
+        renderCurrentTables();
+
+        $("dl_xlsx").disabled = false;
+        $("dl_user_xlsx").disabled = false;
+        $("dl_noencontrados_xlsx").disabled = false;
+        $("status").textContent = "Listo.";
+      } catch (e) {
+        $("error").textContent = e?.message || String(e);
+        $("status").textContent = "";
+        $("dl_xlsx").disabled = true;
+        $("dl_user_xlsx").disabled = true;
+        $("dl_noencontrados_xlsx").disabled = true;
+      } finally {
+        $("run").disabled = false;
+      }
+    }
+
+    async function download(format) {
+      $("error").textContent = "";
+      try {
+        // Mostrar estado de procesamiento también durante la exportación
+        $("status").textContent = "Procesando...";
+        $("run").disabled = true;
+        $("dl_user_xlsx").disabled = true;
+        $("dl_noencontrados_xlsx").disabled = true;
+        $("dl_xlsx").disabled = true;
+
+        const rawBanks = Array.from($("raw_banks").files || []);
+        const recordExcelBank = $("record_excel_bank").files[0];
+        const recordExcelMp = $("record_excel_mp").files[0];
+        const pdfSalice = $("pdf_salice").files[0];
+        const pdfAlarcon = $("pdf_alarcon").files[0];
+        const source = isApiMode() ? 'api' : 'pdf';
+        const apiStartDate = encodeURIComponent($("api_start_date").value || '');
+        const apiEndDate = encodeURIComponent($("api_end_date").value || '');
+        if ((!recordExcelBank && !recordExcelMp) || rawBanks.length === 0) {
+          throw new Error("Tenés que seleccionar ingresos crudos y al menos un record.");
+        }
+        if (source === 'pdf' && !pdfSalice && !pdfAlarcon) {
+          throw new Error("En modo legacy, tenés que subir al menos 1 PDF.");
+        }
+
+        const margin = encodeURIComponent($("margin").value);
+        const tDaysSus = encodeURIComponent($("t_days_sus").value);
+        const maxOpts = encodeURIComponent($("max_opts").value);
+        const dayWeightBefore = encodeURIComponent($("day_weight_before").value);
+        const dayWeightAfter = encodeURIComponent($("day_weight_after").value);
+        const pesoValid = encodeURIComponent($("peso_valid").value);
+        const pesoDudoso = encodeURIComponent($("peso_dudoso").value);
+        const mpPenalty = encodeURIComponent($("mp_penalty").value);
+        const preconciledPenalty = encodeURIComponent($("preconciled_penalty").value);
+        const penSaliceGalicia = encodeURIComponent($("pen_salice_galicia").value);
+        const penAlarconBbva = encodeURIComponent($("pen_alarcon_bbva").value);
+        const cuitMismatchPenalty = encodeURIComponent($("cuit_mismatch_penalty").value);
+        const altDelta = encodeURIComponent($("alt_delta").value);
+
+        const url = `/export?format=${format}&margin_days=${margin}`
+          + `&receipts_source=${source}`
+          + (apiStartDate ? `&api_start_date=${apiStartDate}` : '')
+          + (apiEndDate ? `&api_end_date=${apiEndDate}` : '')
+          + `&tolerance_days_suspect=${tDaysSus}`
+          + `&max_options=${maxOpts}`
+          + `&day_weight_bank_before=${dayWeightBefore}`
+          + `&day_weight_bank_after=${dayWeightAfter}`
+          + `&valid_max_peso=${pesoValid}`
+          + `&dudoso_max_peso=${pesoDudoso}`
+          + `&mp_mismatch_penalty=${mpPenalty}`
+          + `&preconciled_penalty=${preconciledPenalty}`
+          + `&penalty_salice_to_galicia=${penSaliceGalicia}`
+          + `&penalty_alarcon_to_bbva=${penAlarconBbva}`
+          + `&cliente_cuit_mismatch_penalty=${cuitMismatchPenalty}`
+          + `&alternatives_cost_delta=${altDelta}`
+          + `&show_peso=${encodeURIComponent($("show_peso").checked ? 1 : 0)}`
+          + `&show_cuit=${encodeURIComponent($("show_cuit").checked ? 1 : 0)}`;
+
+        const form = new FormData();
+        if (recordExcelBank) form.append('record_excel_bank', recordExcelBank);
+        if (recordExcelMp) form.append('record_excel_mp', recordExcelMp);
+        rawBanks.forEach((f) => form.append('raw_bank_files', f));
+        if (forcedValidations && forcedValidations.length) {
+          form.append('force_validations', JSON.stringify(forcedValidations));
+        }
+        if (deletedDudosos && deletedDudosos.length) {
+          form.append('drop_dudosos', JSON.stringify(deletedDudosos));
+        }
+        if (source === 'pdf') {
+          if (pdfSalice) form.append('pdf_salice', pdfSalice);
+          if (pdfAlarcon) form.append('pdf_alarcon', pdfAlarcon);
+        }
+
+        const res = await fetch(url, { method: 'POST', body: form });
+        if (!res.ok) {
+          const text = await res.text();
+          let msg = text;
+          try {
+            const j = JSON.parse(text);
+            if (j && j.detail) msg = String(j.detail);
+          } catch (_) {}
+          throw new Error(msg);
+        }
+
+        const blob = await res.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        const dispo = res.headers.get('content-disposition') || '';
+        const m = dispo.match(/filename=\"?([^\";]+)\"?/i);
+        if (m && m[1]) {
+          a.download = m[1];
+        } else if (format === 'xlsx') {
+          const base = (recordExcelBank && recordExcelBank.name) ? recordExcelBank.name.replace(/\.[^/.]+$/, '') : 'records';
+          a.download = `${base}_conciliado.xlsx`;
+        }
+        else if (format === 'noencontradosxlsx') {
+          const base = (recordExcelBank && recordExcelBank.name) ? recordExcelBank.name.replace(/\.[^/.]+$/, '') : 'record';
+          a.download = `${base}_no_encontrados.xlsx`;
+        }
+        else if (format === 'devxlsx') a.download = 'resultado_conciliacion_dev.xlsx';
+        else a.download = 'resultado_conciliacion.zip';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        $("status").textContent = "Listo.";
+      } catch (e) {
+        $("error").textContent = e?.message || String(e);
+        $("status").textContent = "";
+      } finally {
+        $("run").disabled = false;
+        // Rehabilitar según si ya hay resultado cargado o no
+        const canDownload = !$("dl_xlsx").disabled || !$("dl_user_xlsx").disabled;
+        // Si antes de descargar estaban habilitados, los volvemos a habilitar.
+        // (Si no hay resultados, seguirán deshabilitados por el flujo normal.)
+        if ($("meta").textContent && $("meta").textContent.trim().length > 0) {
+          $("dl_xlsx").disabled = false;
+          $("dl_user_xlsx").disabled = false;
+          $("dl_noencontrados_xlsx").disabled = false;
+        }
+      }
+    }
+
+    $("run").addEventListener('click', run);
+    $("receipts_mode").addEventListener('change', () => {
+      refreshReceiptsModeUI();
+    });
+    $("dl_user_xlsx").addEventListener('click', () => download('xlsx'));
+    $("dl_noencontrados_xlsx").addEventListener('click', () => download('noencontradosxlsx'));
+    $("dl_xlsx").addEventListener('click', () => download('devxlsx'));
+
+    // Config modal
+    function setDefaults() {
+      $("receipts_mode").value = 'api';
+      $("api_start_date").value = '';
+      $("api_end_date").value = '';
+      $("margin").value = 5;
+      $("t_days_sus").value = 7;
+      $("max_opts").value = 3;
+      $("day_weight_before").value = 35;
+      $("day_weight_after").value = 50;
+      $("peso_valid").value = 170;
+      $("peso_dudoso").value = 3500;
+      $("mp_penalty").value = 35;
+      $("preconciled_penalty").value = 150;
+      $("alt_delta").value = 35;
+      $("pen_salice_galicia").value = 45;
+      $("pen_alarcon_bbva").value = 45;
+      $("cuit_mismatch_penalty").value = 0;
+      $("show_peso").checked = false;
+      $("show_cuit").checked = false;
+      $("persist_cfg").checked = false;
+      normalizeDateRange();
+      refreshReceiptsModeUI();
+    }
+    initDatePickers();
+    setDefaults();
+    loadConfigFromLocal();
+
+    // Config modal (se abre desde el menú)
+    // (Mantenemos compatibilidad por si en algún momento vuelve a existir el botón)
+    const legacyCfgBtn = $("btn_cfg");
+    if (legacyCfgBtn) legacyCfgBtn.addEventListener('click', () => { $("cfg_modal").style.display = 'block'; });
+    $("btn_cfg_close").addEventListener('click', () => { $("cfg_modal").style.display = 'none'; });
+    $("cfg_modal").addEventListener('click', (e) => { if (e.target.id === 'cfg_modal') $("cfg_modal").style.display = 'none'; });
+    $("btn_cfg_reset").addEventListener('click', () => {
+      setDefaults();
+      localStorage.removeItem(STORAGE_KEY);
+      setCfgStatus('Defaults restaurados.');
+    });
+    $("btn_cfg_save").addEventListener('click', () => { saveConfigToLocal(); });
+    $("btn_cfg_apply").addEventListener('click', () => {
+      // Si está activado, guardamos antes de cerrar. Si no, limpiamos.
+      if ($("persist_cfg").checked) saveConfigToLocal();
+      else localStorage.removeItem(STORAGE_KEY);
+      $("cfg_modal").style.display = 'none';
+    });
+
+    // Pop-out menu
+    function closeMenu() { $("menu_dd").style.display = 'none'; }
+    function toggleMenu() {
+      $("menu_dd").style.display = ($("menu_dd").style.display === 'block') ? 'none' : 'block';
+    }
+    $("menu_btn").addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(); });
+    document.addEventListener('click', () => closeMenu());
+    $("menu_dd").addEventListener('click', (e) => e.stopPropagation());
+
+    $("menu_cfg").addEventListener('click', () => { closeMenu(); setCfgStatus(''); $("cfg_modal").style.display = 'block'; });
+    $("menu_meta").addEventListener('click', () => { closeMenu(); $("meta_modal").style.display = 'block'; });
+
+    // Meta modal
+    $("btn_meta_close").addEventListener('click', () => { $("meta_modal").style.display = 'none'; });
+    $("meta_modal").addEventListener('click', (e) => { if (e.target.id === 'meta_modal') $("meta_modal").style.display = 'none'; });
+  </script>
+</body>
+</html>

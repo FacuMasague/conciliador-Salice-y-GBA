@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: conciliador-gba
+    env: python
+    plan: starter
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    autoDeploy: false
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: API_MODE_ENABLED
+        value: "true"
+      - key: RECEIPTS_API_BASE_URL
+        value: https://m5gba.grupoesi.com.ar
+      - key: PADRON_API_BASE_URL
+        value: https://m5gba.grupoesi.com.ar
+      - key: RECEIPTS_API_EMPRESA_IDS
+        value: "2"
+      - key: PADRON_API_EMPRESA_ID
+        value: "2"
+      - key: RECEIPTS_API_PAGE_SIZE
+        value: "100"
+      - key: RECEIPTS_API_PAGE_SIZE_FALLBACKS
+        value: 50
+      - key: RECEIPTS_API_WINDOW_DAYS
+        value: "1"
+      - key: RECEIPTS_API_TIMEOUT_SECONDS
+        value: "60"
+      - key: PADRON_API_TIMEOUT_SECONDS
+        value: "60"
+      - key: PADRON_API_GETITEM_CONCURRENCY
+        value: "4"
+      - key: GESI_API_USERNAME
+        sync: false
+      - key: GESI_API_PASSWORD
+        sync: false
+      - key: RECEIPTS_API_USERNAME
+        sync: false
+      - key: RECEIPTS_API_PASSWORD
+        sync: false
+      - key: PADRON_API_USERNAME
+        sync: false
+      - key: PADRON_API_PASSWORD
+        sync: false
