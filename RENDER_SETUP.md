@@ -1,20 +1,29 @@
 # Render setup
 
-Este repo esta preparado para correr Salice y GBA en un solo Web Service de Render.
+Este repo esta preparado para correr Salice y GBA en un solo Web Service de Render, usando rutas.
 
 La raiz tiene un `router.py` que:
 
 - levanta `Conciliador GBA/app.py` en un puerto interno local;
 - levanta `conciliador SALICE/app.py` en otro puerto interno local;
-- decide a que programa enviar cada request segun el subdominio/host.
+- envia `/gba/...` a GBA;
+- envia `/salice/...` a Salice;
+- redirige `/` a `/gba` por default.
 
 El codigo interno de cada app queda separado y no se mezcla.
 
+## URLs
+
+Cuando el servicio este deployado:
+
+- GBA: `https://conciliador-salice-y-gba.onrender.com/gba`
+- Salice: `https://conciliador-salice-y-gba.onrender.com/salice`
+
 ## Servicio unico
 
-| Servicio Render | Ejecuta | Enruta por host |
+| Servicio Render | Ejecuta | Rutas |
 | --- | --- | --- |
-| `conciliador-salice-y-gba` | `router.py` | `gba` -> GBA, `salice` -> Salice |
+| `conciliador-salice-y-gba` | `router.py` | `/gba`, `/salice` |
 
 ## Crear en Render
 
@@ -51,21 +60,14 @@ Para Salice completar:
 - `SALICE_GESI_API_USERNAME`
 - `SALICE_GESI_API_PASSWORD`
 
-## Dominios
-
-Agregar ambos dominios al mismo Web Service `conciliador-salice-y-gba` desde `Settings` -> `Custom Domains`:
-
-- `gba.tudominio.com`
-- `salice.tudominio.com`
-
-Despues crear los registros DNS que indique Render. Normalmente seran CNAME desde cada subdominio al dominio `onrender.com` del mismo servicio.
-
 ## Variables de ruteo
 
-Defaults incluidos en `render.yaml`:
+Default incluido en `render.yaml`:
 
-- `GBA_HOSTS=gba`
-- `SALICE_HOSTS=salice`
 - `DEFAULT_APP=gba`
 
-Si tus dominios no contienen las palabras `gba` o `salice`, cambia `GBA_HOSTS` y `SALICE_HOSTS` por los hosts reales separados por coma.
+Si queres que `/` abra Salice, cambia `DEFAULT_APP=salice`.
+
+## Dominios
+
+No hace falta dominio propio para usar rutas. Si mas adelante compras un dominio, podes agregarlo al mismo Web Service y seguir usando `/gba` y `/salice`.
