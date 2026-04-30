@@ -11,6 +11,7 @@ from typing import Iterable
 
 import httpx
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import RedirectResponse
 
 ROOT = Path(__file__).resolve().parent
 GBA_PORT = int(os.getenv("GBA_INTERNAL_PORT", "8011"))
@@ -50,7 +51,7 @@ def _env_for_app(prefix: str) -> dict[str, str]:
     return env
 
 
-def _start_app(name: str, cwd: Path, port: int, env_prefix: str) -> subprocess.Popen:
+def _start_app(cwd: Path, port: int, env_prefix: str) -> subprocess.Popen:
     cmd = [
         sys.executable,
         "-m",
@@ -83,8 +84,8 @@ async def _wait_until_ready(port: int, name: str) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global client
-    processes.append(_start_app("gba", ROOT / "Conciliador GBA", GBA_PORT, "GBA"))
-    processes.append(_start_app("salice", ROOT / "conciliador SALICE", SALICE_PORT, "SALICE"))
+    processes.append(_start_app(ROOT / "Conciliador GBA", GBA_PORT, "GBA"))
+    processes.append(_start_app(ROOT / "conciliador SALICE", SALICE_PORT, "SALICE"))
     await asyncio.gather(
         _wait_until_ready(GBA_PORT, "GBA"),
         _wait_until_ready(SALICE_PORT, "Salice"),
@@ -109,21 +110,58 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Conciliador Salice y GBA Router", lifespan=lifespan)
 
 
-def _target_from_host(host_header: str) -> tuple[str, int]:
+def _target_from_host(host_header: str) -> tuple[str, int, str]:
     host = host_header.split(":", 1)[0].lower()
     if any(token in host for token in SALICE_HOSTS):
-        return "salice", SALICE_PORT
+        return "salice", SALICE_PORT, "/salice"
     if any(token in host for token in GBA_HOSTS):
-        return "gba", GBA_PORT
+        return "gba", GBA_PORT, "/gba"
     if DEFAULT_APP == "salice":
-        return "salice", SALICE_PORT
-    return "gba", GBA_PORT
+        return "salice", SALICE_PORT, "/salice"
+    return "gba", GBA_PORT, "/gba"
+
+
+def _target_from_path(path: str, host_header: str) -> tuple[str, int, str, str]:
+    clean = path.lstrip("/")
+    if clean == "gba" or clean.startswith("gba/"):
+        inner = clean[3:].lstrip("/")
+        return "gba", GBA_PORT, "/gba", inner
+    if clean == "salice" or clean.startswith("salice/"):
+        inner = clean[6:].lstrip("/")
+        return "salice", SALICE_PORT, "/salice", inner
+    app_name, port, prefix = _target_from_host(host_header)
+    return app_name, port, prefix, clean
+
+
+def _rewrite_html(content: bytes, prefix: str) -> bytes:
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return content
+    replacements = {
+        '"/static': f'"{prefix}/static',
+        "'/static": f"'{prefix}/static",
+        '`/static': f'`{prefix}/static',
+        '"/compare': f'"{prefix}/compare',
+        "'/compare": f"'{prefix}/compare",
+        '`/compare': f'`{prefix}/compare',
+        '"/export': f'"{prefix}/export',
+        "'/export": f"'{prefix}/export",
+        '`/export': f'`{prefix}/export',
+        '"/version': f'"{prefix}/version',
+        "'/version": f"'{prefix}/version",
+        '`/version': f'`{prefix}/version',
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text.encode("utf-8")
 
 
 @app.get("/health")
 async def health() -> dict[str, object]:
     return {
         "ok": True,
+        "routes": {"gba": "/gba", "salice": "/salice"},
         "apps": {
             "gba": processes[0].poll() is None if len(processes) > 0 else False,
             "salice": processes[1].poll() is None if len(processes) > 1 else False,
@@ -131,15 +169,21 @@ async def health() -> dict[str, object]:
     }
 
 
+@app.get("/")
+async def root() -> RedirectResponse:
+    destination = "/salice" if DEFAULT_APP == "salice" else "/gba"
+    return RedirectResponse(destination, status_code=307)
+
+
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
 async def proxy(path: str, request: Request) -> Response:
     if client is None:
         return Response("Router no inicializado", status_code=503)
 
-    app_name, port = _target_from_host(request.headers.get("host", ""))
+    app_name, port, prefix, inner_path = _target_from_path(path, request.headers.get("host", ""))
     body = await request.body()
     query = request.url.query
-    target_url = f"http://127.0.0.1:{port}/{path}"
+    target_url = f"http://127.0.0.1:{port}/{inner_path}"
     if query:
         target_url += f"?{query}"
 
@@ -161,11 +205,20 @@ async def proxy(path: str, request: Request) -> Response:
     response_headers = {
         key: value
         for key, value in upstream.headers.items()
-        if key.lower() not in HOP_BY_HOP_HEADERS
+        if key.lower() not in HOP_BY_HOP_HEADERS and key.lower() != "content-length"
     }
+    location = response_headers.get("location")
+    if location and location.startswith("/") and not location.startswith(prefix):
+        response_headers["location"] = f"{prefix}{location}"
+
+    content = upstream.content
+    content_type = upstream.headers.get("content-type", "")
+    if "text/html" in content_type.lower():
+        content = _rewrite_html(content, prefix)
+
     return Response(
-        content=upstream.content,
+        content=content,
         status_code=upstream.status_code,
         headers=response_headers,
-        media_type=upstream.headers.get("content-type"),
+        media_type=content_type or None,
     )
