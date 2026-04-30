@@ -33,10 +33,6 @@ services:
         value: "4"
       - key: DEFAULT_APP
         value: gba
-      - key: GBA_HOSTS
-        value: gba
-      - key: SALICE_HOSTS
-        value: salice
       - key: GBA_GESI_API_USERNAME
         sync: false
       - key: GBA_GESI_API_PASSWORD
