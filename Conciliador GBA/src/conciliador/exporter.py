@@ -5,10 +5,13 @@ import csv
 import datetime as dt
 import io
 import os
+import shutil
+import tempfile
 import zipfile
 from typing import Dict, List
 
 import openpyxl
+from openpyxl.utils.cell import coordinate_to_tuple
 
 
 AR_NUMBER_FORMAT = '#.##0,00'
@@ -233,9 +236,7 @@ def export_xlsx(result: Dict[str, List[dict]], out_path: str) -> str:
 
 
 def export_no_encontrados_xlsx(result: Dict[str, List[dict]], out_path: str) -> str:
-    """Write an .xlsx with 4 sheets for no_encontrados:
-    BBVA, Mercado Pago, Galicia y Recibos sin banco.
-    """
+    """Write an .xlsx for no_encontrados split by operational review bucket."""
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
@@ -253,11 +254,13 @@ def export_no_encontrados_xlsx(result: Dict[str, List[dict]], out_path: str) -> 
             return "Mercado Pago"
         return ""
 
-    bank_buckets: dict[str, List[dict]] = {"BBVA": [], "Mercado Pago": [], "Galicia": []}
+    bank_buckets: dict[str, List[dict]] = {"BBVA": [], "Mercado Pago": []}
     for r in bank_rows:
         b = _origin_bucket(r.get("Origen"))
-        if b:
-            bank_buckets[b].append(r)
+        if b == "Mercado Pago":
+            bank_buckets["Mercado Pago"].append(r)
+        elif b in {"BBVA", "Galicia"}:
+            bank_buckets["BBVA"].append(r)
 
     def _non_empty(v: object) -> bool:
         if v is None:
@@ -335,6 +338,25 @@ def export_no_encontrados_xlsx(result: Dict[str, List[dict]], out_path: str) -> 
         for row_idx in range(2, 2 + rows_count):
             ws.row_dimensions[row_idx].height = 20
 
+    def _style_sheet(ws, rows_count: int, cols_count: int) -> None:
+        if rows_count <= 0 or cols_count <= 0:
+            return
+        header_fill = openpyxl.styles.PatternFill("solid", fgColor="E8EEF5")
+        header_font = openpyxl.styles.Font(bold=True, color="22313F")
+        border = openpyxl.styles.Border(
+            bottom=openpyxl.styles.Side(style="thin", color="D5DEE8")
+        )
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.border = border
+            cell.alignment = openpyxl.styles.Alignment(horizontal="center", vertical="center", wrap_text=True)
+        for row in ws.iter_rows(min_row=2, max_row=1 + rows_count, max_col=cols_count):
+            for cell in row:
+                cell.alignment = openpyxl.styles.Alignment(vertical="center", wrap_text=False)
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = f"A1:{openpyxl.utils.get_column_letter(cols_count)}{1 + rows_count}"
+
     def _add_sheet(title: str, sheet_rows: List[dict], preferred_cols: List[str], money_cols: List[str]) -> None:
         ws = wb.create_sheet(_safe_sheet_name(title))
         if not sheet_rows:
@@ -346,6 +368,8 @@ def export_no_encontrados_xlsx(result: Dict[str, List[dict]], out_path: str) -> 
         seen = set(cols)
         for r in sheet_rows:
             for k in r.keys():
+                if str(k).startswith("__"):
+                    continue
                 if k in seen:
                     continue
                 if any(_non_empty(x.get(k)) for x in sheet_rows):
@@ -374,6 +398,7 @@ def export_no_encontrados_xlsx(result: Dict[str, List[dict]], out_path: str) -> 
                     cell.number_format = AR_NUMBER_FORMAT_TRIM
 
         _autosize_sheet(ws, cols, len(sheet_rows))
+        _style_sheet(ws, len(sheet_rows), len(cols))
 
     bank_cols = [
         "Tipo no encontrado",
@@ -398,10 +423,196 @@ def export_no_encontrados_xlsx(result: Dict[str, List[dict]], out_path: str) -> 
         "Peso",
     ]
 
-    _add_sheet("BBVA", bank_buckets["BBVA"], bank_cols, ["Importe movimiento", "Peso"])
-    _add_sheet("Mercado Pago", bank_buckets["Mercado Pago"], bank_cols, ["Importe movimiento", "Peso"])
-    _add_sheet("Galicia", bank_buckets["Galicia"], bank_cols, ["Importe movimiento", "Peso"])
-    _add_sheet("Recibos sin banco", rec_rows, rec_cols, ["Importe recibo", "Peso"])
+    def _rec_sort_key(row: dict) -> tuple:
+        fecha = str(row.get("Fecha recibo", "") or "")
+        try:
+            fecha_key = dt.datetime.strptime(fecha[:10], "%Y-%m-%d").date()
+        except Exception:
+            try:
+                fecha_key = dt.datetime.strptime(fecha[:10], "%d/%m/%Y").date()
+            except Exception:
+                fecha_key = dt.date.max
+        nro = str(row.get("Nro recibo", "") or "")
+        digits = "".join(ch for ch in nro if ch.isdigit())
+        nro_key = int(digits) if digits else 10**18
+        return (fecha_key, nro_key, str(row.get("Nro cliente", "") or ""))
+
+    def _bank_sort_key(row: dict) -> tuple:
+        fecha = str(row.get("Fecha movimiento", "") or "")
+        try:
+            fecha_key = dt.datetime.strptime(fecha[:10], "%Y-%m-%d").date()
+        except Exception:
+            try:
+                fecha_key = dt.datetime.strptime(fecha[:10], "%d/%m/%Y").date()
+            except Exception:
+                fecha_key = dt.date.max
+        try:
+            amount_key = float(str(row.get("Importe movimiento") or "0").replace(",", "."))
+        except Exception:
+            amount_key = 0.0
+        return (fecha_key, str(row.get("Fila Excel", "") or ""), amount_key)
+
+    rec_rows = sorted(rec_rows, key=_rec_sort_key)
+    bank_buckets["Mercado Pago"] = sorted(bank_buckets["Mercado Pago"], key=_bank_sort_key)
+    bank_buckets["BBVA"] = sorted(bank_buckets["BBVA"], key=_bank_sort_key)
+
+    _add_sheet("Recibos no encontrados", rec_rows, rec_cols, ["Importe recibo", "Peso"])
+    _add_sheet("Ingresos MP no encontrados", bank_buckets["Mercado Pago"], bank_cols, ["Importe movimiento", "Peso"])
+    _add_sheet("Ingresos BBVA no encontrados", bank_buckets["BBVA"], bank_cols, ["Importe movimiento", "Peso"])
+
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    try:
+        wb.calculation.fullCalcOnLoad = True
+        wb.calculation.calcMode = "auto"
+    except Exception:
+        pass
+    wb.save(out_path)
+    _strip_calc_chain(out_path)
+    return out_path
+
+
+def export_dudosos_xlsx(result: Dict[str, List[dict]], out_path: str) -> str:
+    """Exporta dudosos activos y borrados, separados por origen operativo."""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    rows: List[dict] = []
+    for row in result.get("dudosos", []) or []:
+        r = dict(row)
+        rows.append(r)
+    for row in result.get("dudosos_borrados", []) or []:
+        r = dict(row)
+        rows.append(r)
+
+    def _bucket(row: dict) -> str:
+        origen = str(row.get("Origen", "") or "").strip().upper()
+        if origen == "MERCADOPAGO":
+            return "Mercado Pago"
+        return "BBVA"
+
+    buckets: dict[str, List[dict]] = {"BBVA": [], "Mercado Pago": []}
+    for row in rows:
+        buckets[_bucket(row)].append(row)
+
+    def _non_empty(v: object) -> bool:
+        return v is not None and str(v).strip() != ""
+
+    def _coerce_money(v: object) -> object:
+        if v is None or isinstance(v, (int, float)):
+            return v
+        if not isinstance(v, str):
+            return v
+        s = v.strip().replace("$", "").replace(" ", "")
+        if not s:
+            return v
+        try:
+            if "." in s and "," in s:
+                s = s.replace(".", "").replace(",", ".")
+            elif "," in s:
+                s = s.replace(",", ".")
+            return float(s)
+        except Exception:
+            return v
+
+    preferred_cols = [
+        "Tipo fila",
+        "Nro recibo",
+        "Nro cliente",
+        "Cliente",
+        "Medio de pago",
+        "Fecha recibo",
+        "Importe recibo",
+        "Divisor",
+        "Origen",
+        "Fecha movimiento",
+        "Importe movimiento",
+        "Detalle movimiento",
+        "Fila Excel",
+        "Dif días",
+        "Dif importe",
+        "Peso",
+        "Motivo",
+    ]
+    money_cols = {"Importe recibo", "Importe movimiento", "Dif importe", "Peso"}
+
+    def _style_sheet(ws, rows_count: int, cols_count: int) -> None:
+        if rows_count <= 0 or cols_count <= 0:
+            return
+        header_fill = openpyxl.styles.PatternFill("solid", fgColor="E8EEF5")
+        header_font = openpyxl.styles.Font(bold=True, color="22313F")
+        border = openpyxl.styles.Border(bottom=openpyxl.styles.Side(style="thin", color="D5DEE8"))
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.border = border
+            cell.alignment = openpyxl.styles.Alignment(horizontal="center", vertical="center", wrap_text=True)
+        for row in ws.iter_rows(min_row=2, max_row=1 + rows_count, max_col=cols_count):
+            for cell in row:
+                cell.alignment = openpyxl.styles.Alignment(vertical="center", wrap_text=False)
+        ws.row_dimensions[1].height = 24
+        for row_idx in range(2, 2 + rows_count):
+            ws.row_dimensions[row_idx].height = 20
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = f"A1:{openpyxl.utils.get_column_letter(cols_count)}{1 + rows_count}"
+
+    def _add_sheet(title: str, sheet_rows: List[dict]) -> None:
+        ws = wb.create_sheet(_safe_sheet_name(title))
+        if not sheet_rows:
+            ws.append(["(sin filas)"])
+            return
+        force_cols = {"Divisor"}
+        hidden_cols = {"Estado dudoso", "Ranking"}
+        cols = [c for c in preferred_cols if c in force_cols or any(_non_empty(r.get(c)) for r in sheet_rows)]
+        seen = set(cols)
+        for row in sheet_rows:
+            for key in row.keys():
+                if str(key).startswith("__") or key in seen or key in hidden_cols:
+                    continue
+                if any(_non_empty(r.get(key)) for r in sheet_rows):
+                    cols.append(key)
+                    seen.add(key)
+        ws.append(cols)
+        for row in sheet_rows:
+            values = []
+            for col in cols:
+                value = row.get(col, "")
+                if col in {"Fecha movimiento", "Fecha recibo"}:
+                    value = _coerce_export_date(value)
+                if col in money_cols:
+                    value = _coerce_money(value)
+                values.append(value)
+            ws.append(values)
+        min_width_by_col = {
+            "Tipo fila": 13,
+            "Nro recibo": 12,
+            "Nro cliente": 13,
+            "Cliente": 34,
+            "Medio de pago": 18,
+            "Fecha recibo": 14,
+            "Importe recibo": 18,
+            "Divisor": 18,
+            "Origen": 14,
+            "Fecha movimiento": 16,
+            "Importe movimiento": 18,
+            "Detalle movimiento": 48,
+            "Fila Excel": 12,
+            "Dif días": 12,
+            "Dif importe": 14,
+            "Peso": 14,
+            "Motivo": 32,
+        }
+        for col_idx, col in enumerate(cols, start=1):
+            width = max(len(str(col)) + 2, min_width_by_col.get(col, 12))
+            for row_idx in range(2, 2 + len(sheet_rows)):
+                value = ws.cell(row_idx, col_idx).value
+                width = max(width, min(len(str(value or "")) + 2, 60))
+                if col in money_cols and isinstance(value, (int, float)):
+                    ws.cell(row_idx, col_idx).number_format = AR_NUMBER_FORMAT_TRIM
+            ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = min(width, 60)
+        _style_sheet(ws, len(sheet_rows), len(cols))
+
+    _add_sheet("Dudosos Mercado Pago", buckets["Mercado Pago"])
+    _add_sheet("Dudosos BBVA", buckets["BBVA"])
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     try:
@@ -573,6 +784,205 @@ def export_filled_generic_excel(
     if touched:
         _strip_calc_chain(out_path)
     return out_path
+
+
+def export_combined_records_excel(
+    records: list[dict],
+    result: Dict[str, List[dict]],
+    out_path: str,
+) -> str:
+    """Exporta un único Excel conciliado con una hoja BBVA y una hoja Mercado Pago.
+
+    Cada record se completa primero con `export_filled_generic_excel` para reutilizar
+    la lógica de escritura existente. Luego se copian las hojas relevantes a un libro
+    nuevo, preservando el formato visual de cada record original.
+    """
+
+    def _norm(value: object) -> str:
+        return str(value or "").strip().lower()
+
+    def _sheet_headers(ws) -> set[str]:
+        max_rows = min(int(ws.max_row or 1), 20)
+        max_cols = min(int(ws.max_column or 1), 80)
+        for r in range(1, max_rows + 1):
+            headers = {_norm(ws.cell(r, c).value) for c in range(1, max_cols + 1)}
+            if headers:
+                yield_headers = headers
+                if (
+                    "fecha de pago" in yield_headers
+                    or ("fecha" in yield_headers and "concepto" in yield_headers)
+                    or ("fecha" in yield_headers and ("importe" in yield_headers or "creditos" in yield_headers))
+                ):
+                    return yield_headers
+        return set()
+
+    def _rows_for_record(record_key: str, origins: set[str]) -> list[dict]:
+        rows: list[dict] = []
+        for row in result.get("validados") or []:
+            try:
+                if int(row.get("Ranking") or 0) != 1:
+                    continue
+            except Exception:
+                continue
+            origen = str(row.get("Origen") or "").strip().upper()
+            if origins and origen not in origins:
+                continue
+            row_record_key = str(row.get("__record_key") or "").strip()
+            if record_key and row_record_key and row_record_key != record_key:
+                continue
+            rows.append(row)
+        return rows
+
+    def _pick_source_sheet(wb: openpyxl.Workbook, group: str, rows: list[dict]) -> str | None:
+        preferred: list[str] = []
+        for row in rows:
+            sheet_name = str(row.get("__sheet_name") or "").strip()
+            if sheet_name and sheet_name in wb.sheetnames and sheet_name not in preferred:
+                preferred.append(sheet_name)
+        for sheet_name in preferred + list(wb.sheetnames):
+            ws = wb[sheet_name]
+            headers = _sheet_headers(ws)
+            if group == "mp" and "fecha de pago" in headers:
+                return sheet_name
+            if group == "bank" and "fecha" in headers and "concepto" in headers and (
+                "credito" in headers or "crédito" in headers
+            ):
+                return sheet_name
+            if group == "bank" and "fecha" in headers and (
+                "importe" in headers or "creditos" in headers or "créditos" in headers
+            ) and (
+                "razon social" in headers or "razón social" in headers or "cuit" in headers
+            ):
+                return sheet_name
+        return None
+
+    def _copy_sheet(src_ws, dst_wb: openpyxl.Workbook, title: str) -> None:
+        clean_title = title[:31]
+        if clean_title in dst_wb.sheetnames:
+            base = clean_title[:28]
+            i = 2
+            while f"{base} {i}" in dst_wb.sheetnames:
+                i += 1
+            clean_title = f"{base} {i}"
+        dst_ws = dst_wb.create_sheet(clean_title)
+
+        for row in src_ws.iter_rows():
+            for src_cell in row:
+                dst_cell = dst_ws.cell(src_cell.row, src_cell.column, src_cell.value)
+                if src_cell.has_style:
+                    dst_cell.font = copy.copy(src_cell.font)
+                    dst_cell.fill = copy.copy(src_cell.fill)
+                    dst_cell.border = copy.copy(src_cell.border)
+                    dst_cell.alignment = copy.copy(src_cell.alignment)
+                    dst_cell.protection = copy.copy(src_cell.protection)
+                if src_cell.hyperlink:
+                    dst_cell._hyperlink = copy.copy(src_cell.hyperlink)
+                if src_cell.comment:
+                    dst_cell.comment = copy.copy(src_cell.comment)
+                dst_cell.number_format = src_cell.number_format
+
+        for key, dim in src_ws.column_dimensions.items():
+            dst_dim = dst_ws.column_dimensions[key]
+            dst_dim.width = dim.width
+            dst_dim.hidden = dim.hidden
+            dst_dim.outlineLevel = dim.outlineLevel
+            dst_dim.collapsed = dim.collapsed
+
+        for key, dim in src_ws.row_dimensions.items():
+            dst_dim = dst_ws.row_dimensions[key]
+            dst_dim.height = dim.height
+            dst_dim.hidden = dim.hidden
+            dst_dim.outlineLevel = dim.outlineLevel
+            dst_dim.collapsed = dim.collapsed
+
+        for merged in src_ws.merged_cells.ranges:
+            dst_ws.merge_cells(str(merged))
+
+        def _safe_freeze_panes(value: object) -> str | None:
+            if not value:
+                return "A2"
+            try:
+                row, col = coordinate_to_tuple(str(value))
+            except Exception:
+                return "A2"
+            if row <= 5 and col <= 3:
+                return str(value)
+            return "A2"
+
+        # Algunos records quedan guardados con paneles congelados en filas muy bajas
+        # (ej. A6165). Copiar eso bloquea el desplazamiento normal en Excel.
+        dst_ws.freeze_panes = _safe_freeze_panes(src_ws.freeze_panes)
+        dst_ws.auto_filter.ref = src_ws.auto_filter.ref
+        dst_ws.sheet_view.showGridLines = src_ws.sheet_view.showGridLines
+        if dst_ws.sheet_view.selection:
+            selection = dst_ws.sheet_view.selection[0]
+            selection.activeCell = "A1"
+            selection.sqref = "A1"
+            selection.pane = "bottomLeft" if dst_ws.freeze_panes else None
+        dst_ws.sheet_format = copy.copy(src_ws.sheet_format)
+        dst_ws.sheet_properties = copy.copy(src_ws.sheet_properties)
+        dst_ws.page_margins = copy.copy(src_ws.page_margins)
+        dst_ws.page_setup = copy.copy(src_ws.page_setup)
+        dst_ws.print_options = copy.copy(src_ws.print_options)
+
+    tmp_dir = tempfile.mkdtemp(prefix="conciliador_combined_export_")
+    try:
+        filled_books: list[tuple[dict, str]] = []
+        for idx, rec in enumerate(records):
+            origins = set(str(o).strip().upper() for o in (rec.get("origins") or []) if str(o).strip())
+            record_key = str(rec.get("key") or "")
+            filled_path = os.path.join(tmp_dir, f"record_{idx + 1}_{record_key or 'default'}_filled.xlsx")
+            export_filled_generic_excel(
+                str(rec.get("working_excel_path") or ""),
+                result,
+                filled_path,
+                allowed_origins=origins or None,
+                record_key=record_key,
+            )
+            filled_books.append((rec, filled_path))
+
+        out_wb = openpyxl.Workbook()
+        default_sheet = out_wb.active
+        out_wb.remove(default_sheet)
+
+        copied_bank = False
+        copied_mp = False
+        for rec, filled_path in filled_books:
+            origins = set(str(o).strip().upper() for o in (rec.get("origins") or []) if str(o).strip())
+            record_key = str(rec.get("key") or "")
+            wb = openpyxl.load_workbook(filled_path)
+            try:
+                rows = _rows_for_record(record_key, origins)
+                if not copied_bank and {"BBVA", "GALICIA"} & origins:
+                    sheet_name = _pick_source_sheet(wb, "bank", rows)
+                    if sheet_name:
+                        _copy_sheet(wb[sheet_name], out_wb, "BBVA")
+                        copied_bank = True
+                if not copied_mp and "MERCADOPAGO" in origins:
+                    sheet_name = _pick_source_sheet(wb, "mp", rows)
+                    if sheet_name:
+                        _copy_sheet(wb[sheet_name], out_wb, "Mercado Pago")
+                        copied_mp = True
+            finally:
+                try:
+                    wb.close()
+                except Exception:
+                    pass
+
+        if not out_wb.sheetnames:
+            raise ValueError("No pude encontrar hojas compatibles para exportar records conciliados.")
+
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        try:
+            out_wb.calculation.fullCalcOnLoad = True
+            out_wb.calculation.calcMode = "auto"
+        except Exception:
+            pass
+        out_wb.save(out_path)
+        _strip_calc_chain(out_path)
+        return out_path
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def export_filled_bank_excel(

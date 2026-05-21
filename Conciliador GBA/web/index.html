@@ -407,7 +407,7 @@
   <div class="row">
     <div class="card" style="flex: 1;">
       <div class="uploads">
-        <div class="upload-col upload-col--wide">
+        <div class="upload-col">
           <div class="upload-head">
             <div>
               <div class="upload-title">Extractos nuevos</div>
@@ -429,37 +429,18 @@
         <div class="upload-col">
           <div class="upload-head">
             <div>
-              <div class="upload-title">Record bancario</div>
-              <div class="upload-note">Libro base donde se van a escribir las conciliaciones de los ingresos bancarios.</div>
+              <div class="upload-title">Records bancarios</div>
+              <div class="upload-note">Subí el record BBVA y el record Mercado Pago separados, o un único Excel que contenga ambos formatos.</div>
             </div>
             <span class="upload-tag">Paso 2</span>
           </div>
-          <input id="record_excel_bank" class="file-hidden" type="file" accept=".xlsx,.xls" />
-          <label for="record_excel_bank" class="drop" title="Seleccionar record bancario">
+          <input id="record_excels" class="file-hidden" type="file" accept=".xlsx,.xls" multiple />
+          <label for="record_excels" class="drop" title="Seleccionar records bancarios">
             <div class="drop-inner">
               <div class="drop-icon">▣</div>
-              <div class="drop-title">Seleccionar record bancario</div>
-              <div class="drop-subtitle">Archivo único en `.xlsx` o `.xls`.</div>
-              <div id="record_bank_name" class="name muted">Ningún archivo seleccionado</div>
-            </div>
-          </label>
-        </div>
-
-        <div class="upload-col">
-          <div class="upload-head">
-            <div>
-              <div class="upload-title">Record Mercado Pago</div>
-              <div class="upload-note">Libro base donde se van a escribir las conciliaciones de los ingresos de Mercado Pago.</div>
-            </div>
-            <span class="upload-tag">Paso 3</span>
-          </div>
-          <input id="record_excel_mp" class="file-hidden" type="file" accept=".xlsx,.xls" />
-          <label for="record_excel_mp" class="drop" title="Seleccionar record Mercado Pago">
-            <div class="drop-inner">
-              <div class="drop-icon">▣</div>
-              <div class="drop-title">Seleccionar record Mercado Pago</div>
-              <div class="drop-subtitle">Archivo único en `.xlsx` o `.xls`.</div>
-              <div id="record_mp_name" class="name muted">Ningún archivo seleccionado</div>
+              <div class="drop-title">Soltar records o hacer clic</div>
+              <div class="drop-subtitle">Acepta uno o varios records en `.xlsx` o `.xls`; el sistema detecta BBVA/MP por formato.</div>
+              <div id="record_excels_name" class="name muted">Ningún archivo seleccionado</div>
             </div>
           </label>
         </div>
@@ -716,6 +697,7 @@
       <div class="action-row">
         <button id="run" class="btn-primary">Comparar</button>
         <button id="dl_user_xlsx" type="button" class="btn-secondary" disabled>Descargar validados</button>
+        <button id="dl_dudosos_xlsx" type="button" class="btn-secondary" disabled>Descargar dudosos</button>
         <button id="dl_noencontrados_xlsx" type="button" class="btn-secondary" disabled>Descargar no encontrados</button>
         <span id="status" class="muted"></span>
       </div>
@@ -1188,20 +1170,19 @@
       lab.textContent = name;
       lab.classList.toggle('muted', !(inp.files && inp.files.length));
     }
-    ['raw_banks','record_excel_bank','record_excel_mp','pdf_salice','pdf_alarcon'].forEach(id => {
+    ['raw_banks','record_excels','pdf_salice','pdf_alarcon'].forEach(id => {
       const map = {
         raw_banks:'raw_banks_name',
-        record_excel_bank:'record_bank_name',
-        record_excel_mp:'record_mp_name',
+        record_excels:'record_excels_name',
         pdf_salice:'salice_name',
         pdf_alarcon:'alarcon_name',
       };
       const el = $(id);
       if (el) {
-        el.addEventListener('change', () => setFileName(id, map[id], { multi: id === 'raw_banks' }));
+        el.addEventListener('change', () => setFileName(id, map[id], { multi: id === 'raw_banks' || id === 'record_excels' }));
       }
       // init
-      setFileName(id, map[id], { multi: id === 'raw_banks' });
+      setFileName(id, map[id], { multi: id === 'raw_banks' || id === 'record_excels' });
     });
 
     // Enable drag & drop onto the visible drop areas.
@@ -1226,7 +1207,7 @@
         if (!files || files.length === 0) return;
 
         const dt = new DataTransfer();
-        if (inputId === 'raw_banks') {
+        if (inputId === 'raw_banks' || inputId === 'record_excels') {
           Array.from(files).forEach((f) => {
             if (/\.(xlsx|xls)$/i.test(f.name)) dt.items.add(f);
           });
@@ -1234,11 +1215,7 @@
         } else {
           const f0 = files[0];
           if (!f0) return;
-          if (inputId === 'record_excel_bank' || inputId === 'record_excel_mp') {
-            if (!/\.(xlsx|xls)$/i.test(f0.name)) return;
-          } else {
-            if (!/\.(pdf)$/i.test(f0.name)) return;
-          }
+          if (!/\.(pdf)$/i.test(f0.name)) return;
           dt.items.add(f0);
         }
         inp.files = dt.files;
@@ -1247,8 +1224,7 @@
     }
 
     bindDropArea('raw_banks', 'raw_banks_name');
-    bindDropArea('record_excel_bank', 'record_bank_name');
-    bindDropArea('record_excel_mp', 'record_mp_name');
+    bindDropArea('record_excels', 'record_excels_name');
     bindDropArea('pdf_salice', 'salice_name');
     bindDropArea('pdf_alarcon', 'alarcon_name');
 
@@ -1485,6 +1461,33 @@
       };
     }
 
+    function noEncontradoReciboFromDudoso(row, principalRef) {
+      const base = principalRef || row || {};
+      return {
+        'Tipo no encontrado': 'RECIBO_SIN_BANCO',
+        'Nro recibo': base['Nro recibo'] || '',
+        'Nro cliente': base['Nro cliente'] || '',
+        'Cliente': base['Cliente'] || '',
+        'Medio de pago': base['Medio de pago'] || '',
+        'Fecha recibo': base['Fecha recibo'] || '',
+        'Importe recibo': base['Importe recibo'] || '',
+        'Divisor': '',
+        'Peso': base['Peso'] || '',
+        '__case_id': base.__case_id || '',
+        '__manual_drop': true,
+      };
+    }
+
+    function noEncontradoReceiptSig(row) {
+      if (!row) return '';
+      return [
+        String(row['Tipo no encontrado'] || ''),
+        String(row['Nro recibo'] || ''),
+        String(row['Nro cliente'] || ''),
+        String(row['Importe recibo'] || ''),
+      ].join('||');
+    }
+
     function bankSig(row) {
       if (!row) return '';
       return [
@@ -1604,8 +1607,16 @@
       } else {
         lastData.dudosos = (lastData.dudosos || []).filter((r) => r !== row);
       }
+      const receiptNoEncontrado = noEncontradoReciboFromDudoso(row, principalRef);
+      if (!Array.isArray(lastData.no_encontrados)) lastData.no_encontrados = [];
+      const sig = noEncontradoReceiptSig(receiptNoEncontrado);
+      const already = lastData.no_encontrados.some((r) => noEncontradoReceiptSig(r) === sig);
+      if (!already && String(receiptNoEncontrado['Nro recibo'] || '').trim() !== '') {
+        lastData.no_encontrados.push(receiptNoEncontrado);
+      }
 
       $("cnt_warn").textContent = `(${lastData.dudosos.length})`;
+      $("cnt_bad").textContent = `(${lastData.no_encontrados.length})`;
       renderCurrentTables();
     }
 
@@ -1633,14 +1644,13 @@
       $("run").disabled = true;
       try {
         const rawBanks = Array.from($("raw_banks").files || []);
-        const recordExcelBank = $("record_excel_bank").files[0];
-        const recordExcelMp = $("record_excel_mp").files[0];
+        const recordExcels = Array.from($("record_excels").files || []);
         const pdfSalice = $("pdf_salice").files[0];
         const pdfAlarcon = $("pdf_alarcon").files[0];
         const source = isApiMode() ? 'api' : 'pdf';
         const apiStartDate = encodeURIComponent($("api_start_date").value || '');
         const apiEndDate = encodeURIComponent($("api_end_date").value || '');
-        if ((!recordExcelBank && !recordExcelMp) || rawBanks.length === 0) {
+        if (recordExcels.length === 0 || rawBanks.length === 0) {
           throw new Error("Tenés que seleccionar ingresos crudos y al menos un record.");
         }
         if (source === 'pdf' && !pdfSalice && !pdfAlarcon) {
@@ -1681,8 +1691,7 @@
           + `&show_cuit=${encodeURIComponent($("show_cuit").checked ? 1 : 0)}`;
 
         const form = new FormData();
-        if (recordExcelBank) form.append('record_excel_bank', recordExcelBank);
-        if (recordExcelMp) form.append('record_excel_mp', recordExcelMp);
+        recordExcels.forEach((f) => form.append('record_excel_files', f));
         rawBanks.forEach((f) => form.append('raw_bank_files', f));
         if (source === 'pdf') {
           if (pdfSalice) form.append('pdf_salice', pdfSalice);
@@ -1720,6 +1729,7 @@
 
         $("dl_xlsx").disabled = false;
         $("dl_user_xlsx").disabled = false;
+        $("dl_dudosos_xlsx").disabled = false;
         $("dl_noencontrados_xlsx").disabled = false;
         $("status").textContent = "Listo.";
       } catch (e) {
@@ -1727,6 +1737,7 @@
         $("status").textContent = "";
         $("dl_xlsx").disabled = true;
         $("dl_user_xlsx").disabled = true;
+        $("dl_dudosos_xlsx").disabled = true;
         $("dl_noencontrados_xlsx").disabled = true;
       } finally {
         $("run").disabled = false;
@@ -1740,18 +1751,18 @@
         $("status").textContent = "Procesando...";
         $("run").disabled = true;
         $("dl_user_xlsx").disabled = true;
+        $("dl_dudosos_xlsx").disabled = true;
         $("dl_noencontrados_xlsx").disabled = true;
         $("dl_xlsx").disabled = true;
 
         const rawBanks = Array.from($("raw_banks").files || []);
-        const recordExcelBank = $("record_excel_bank").files[0];
-        const recordExcelMp = $("record_excel_mp").files[0];
+        const recordExcels = Array.from($("record_excels").files || []);
         const pdfSalice = $("pdf_salice").files[0];
         const pdfAlarcon = $("pdf_alarcon").files[0];
         const source = isApiMode() ? 'api' : 'pdf';
         const apiStartDate = encodeURIComponent($("api_start_date").value || '');
         const apiEndDate = encodeURIComponent($("api_end_date").value || '');
-        if ((!recordExcelBank && !recordExcelMp) || rawBanks.length === 0) {
+        if (recordExcels.length === 0 || rawBanks.length === 0) {
           throw new Error("Tenés que seleccionar ingresos crudos y al menos un record.");
         }
         if (source === 'pdf' && !pdfSalice && !pdfAlarcon) {
@@ -1792,8 +1803,7 @@
           + `&show_cuit=${encodeURIComponent($("show_cuit").checked ? 1 : 0)}`;
 
         const form = new FormData();
-        if (recordExcelBank) form.append('record_excel_bank', recordExcelBank);
-        if (recordExcelMp) form.append('record_excel_mp', recordExcelMp);
+        recordExcels.forEach((f) => form.append('record_excel_files', f));
         rawBanks.forEach((f) => form.append('raw_bank_files', f));
         if (forcedValidations && forcedValidations.length) {
           form.append('force_validations', JSON.stringify(forcedValidations));
@@ -1825,12 +1835,16 @@
         if (m && m[1]) {
           a.download = m[1];
         } else if (format === 'xlsx') {
-          const base = (recordExcelBank && recordExcelBank.name) ? recordExcelBank.name.replace(/\.[^/.]+$/, '') : 'records';
+          const base = recordExcels.length === 1 ? recordExcels[0].name.replace(/\.[^/.]+$/, '') : 'records';
           a.download = `${base}_conciliado.xlsx`;
         }
         else if (format === 'noencontradosxlsx') {
-          const base = (recordExcelBank && recordExcelBank.name) ? recordExcelBank.name.replace(/\.[^/.]+$/, '') : 'record';
+          const base = recordExcels.length === 1 ? recordExcels[0].name.replace(/\.[^/.]+$/, '') : 'record';
           a.download = `${base}_no_encontrados.xlsx`;
+        }
+        else if (format === 'dudososxlsx') {
+          const base = recordExcels.length === 1 ? recordExcels[0].name.replace(/\.[^/.]+$/, '') : 'record';
+          a.download = `${base}_dudosos.xlsx`;
         }
         else if (format === 'devxlsx') a.download = 'resultado_conciliacion_dev.xlsx';
         else a.download = 'resultado_conciliacion.zip';
@@ -1850,6 +1864,7 @@
         if ($("meta").textContent && $("meta").textContent.trim().length > 0) {
           $("dl_xlsx").disabled = false;
           $("dl_user_xlsx").disabled = false;
+          $("dl_dudosos_xlsx").disabled = false;
           $("dl_noencontrados_xlsx").disabled = false;
         }
       }
@@ -1860,6 +1875,7 @@
       refreshReceiptsModeUI();
     });
     $("dl_user_xlsx").addEventListener('click', () => download('xlsx'));
+    $("dl_dudosos_xlsx").addEventListener('click', () => download('dudososxlsx'));
     $("dl_noencontrados_xlsx").addEventListener('click', () => download('noencontradosxlsx'));
     $("dl_xlsx").addEventListener('click', () => download('devxlsx'));
 

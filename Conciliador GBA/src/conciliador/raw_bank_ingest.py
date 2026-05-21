@@ -807,11 +807,14 @@ def _existing_counter_galicia(
 def _pick_bbva_sheet(wb: openpyxl.Workbook, source_name: str) -> Optional[str]:
     by_norm = {_norm(s): s for s in wb.sheetnames}
     gba_sheet = by_norm.get(_norm("Movimientos gba"))
+    combined_bbva_sheet = by_norm.get(_norm("BBVA"))
     salice_bbva = by_norm.get(_norm("SALICE BBVA"))
     alarcon_bbva = by_norm.get(_norm(" ALARCON BBVA"))
 
     if gba_sheet:
         return gba_sheet
+    if combined_bbva_sheet:
+        return combined_bbva_sheet
     if salice_bbva and not alarcon_bbva:
         return salice_bbva
     if alarcon_bbva and not salice_bbva:
@@ -858,8 +861,12 @@ def _pick_mp_sheet(wb: openpyxl.Workbook, fecha: dt.date | None = None) -> Optio
             return wanted
     if "MercadoPago " in wb.sheetnames:
         return "MercadoPago "
+    by_norm = {_norm(s): s for s in wb.sheetnames}
+    combined_mp_sheet = by_norm.get(_norm("Mercado Pago"))
+    if combined_mp_sheet:
+        return combined_mp_sheet
     for s in wb.sheetnames:
-        if "MERCADOPAGO" in _norm(s):
+        if "mercadopago" in _norm(s).replace(" ", ""):
             return s
     if fecha is not None:
         for s in wb.sheetnames:
@@ -1250,7 +1257,7 @@ def build_runtime_workbook_from_raw(
             found = ", ".join(wb.sheetnames) if wb.sheetnames else "(sin hojas)"
             raise ValueError(
                 "El consolidado bancario no tiene hoja BBVA compatible para esta corrida. "
-                "Se esperaba 'Movimientos gba' (GBA) o las hojas legacy de BBVA. "
+                "Se esperaba 'Movimientos gba', 'BBVA' (Excel combinado) o las hojas legacy de BBVA. "
                 f"Hojas encontradas: {found}"
             )
         by_source: Dict[str, List[RawBankTxn]] = {}

@@ -5,9 +5,10 @@ import json
 import shutil
 import tempfile
 import uuid
-import zipfile
+import unicodedata
 from typing import Optional
 
+import openpyxl
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -19,6 +20,8 @@ load_project_env()
 from src.conciliador.pipeline import compare_excel_pdfs
 from src.conciliador.exporter import (
     export_xlsx,
+    export_combined_records_excel,
+    export_dudosos_xlsx,
     export_filled_bank_excel,
     export_filled_generic_excel,
     export_zip_csv,
@@ -29,7 +32,7 @@ from src.conciliador.external.errors import ExternalConfigError, ExternalProvide
 
 
 # Versión visible en UI y en /docs
-APP_VERSION = "1.2.15"
+APP_VERSION = "1.2.20"
 app = FastAPI(title="Conciliador de Recibos e Ingresos", version=APP_VERSION)
 
 # Para desarrollo web (frontend local) sin fricción.
@@ -83,6 +86,50 @@ def _download_name_from_excel_filename(excel_filename: str | None, suffix: str) 
         return f"{base}_{suffix}.xlsx"
     except Exception:
         return f"ingresos_{suffix}.xlsx"
+
+
+def _norm_excel_text(value: object) -> str:
+    s = str(value or "").strip().lower()
+    return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+
+
+def _detect_record_kinds(record_path: str) -> set[str]:
+    """Detecta si un record contiene formato bancario GBA, Mercado Pago, o ambos."""
+    try:
+        wb = openpyxl.load_workbook(record_path, read_only=True, data_only=False)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"No pude leer el record '{os.path.basename(record_path)}': {e}")
+
+    kinds: set[str] = set()
+    try:
+        for ws in wb.worksheets:
+            max_rows = min(int(ws.max_row or 1), 20)
+            max_cols = min(int(ws.max_column or 1), 80)
+            for r in range(1, max_rows + 1):
+                headers = {_norm_excel_text(ws.cell(r, c).value) for c in range(1, max_cols + 1)}
+                if "fecha de pago" in headers:
+                    kinds.add("mp")
+                if "fecha" in headers and "concepto" in headers and ("credito" in headers or "crédito" in headers):
+                    kinds.add("bank")
+                if (
+                    "fecha" in headers
+                    and ("importe" in headers or "creditos" in headers or "créditos" in headers)
+                    and (
+                        "razon social" in headers
+                        or "razón social" in headers
+                        or "cuit" in headers
+                        or "leyendas adicionales 1" in headers
+                    )
+                ):
+                    kinds.add("bank")
+                if len(kinds) == 2:
+                    return kinds
+    finally:
+        try:
+            wb.close()
+        except Exception:
+            pass
+    return kinds
 
 
 def _iso_min(values: list[str | None]) -> str | None:
@@ -154,6 +201,37 @@ async def _build_single_record(
     return record, ingest_meta
 
 
+def _build_single_record_from_path(
+    *,
+    tmp_dir: str,
+    rid: str,
+    record_path: str,
+    original_filename: str | None,
+    raw_paths: list[str],
+    key: str,
+    origins: list[str],
+) -> tuple[dict, dict]:
+    """Construye el workbook runtime desde un record ya guardado en disco."""
+    runtime_path = os.path.join(tmp_dir, f"{rid}_runtime_{key}.xlsx")
+    if raw_paths:
+        ingest_meta = build_runtime_workbook_from_raw(
+            record_excel_path=record_path,
+            raw_bank_paths=raw_paths,
+            out_excel_path=runtime_path,
+        )
+    else:
+        shutil.copy2(record_path, runtime_path)
+        ingest_meta = _empty_ingest_meta(os.path.basename(record_path))
+    record = {
+        "key": key,
+        "working_excel_path": runtime_path,
+        "base_excel_filename": original_filename or os.path.basename(record_path),
+        "origins": origins,
+        "export_mode": "generic",
+    }
+    return record, ingest_meta
+
+
 def _merge_ingestion_meta(metas: list[dict]) -> dict:
     summary = {
         "BBVA": {"input": 0, "appended": 0, "duplicates_skipped": 0, "sheet": None},
@@ -217,6 +295,7 @@ async def _prepare_excel_for_run(
     rid: str,
     excel: UploadFile | None,
     record_excel: UploadFile | None,
+    record_excel_files: list[UploadFile] | None,
     record_excel_bank: UploadFile | None,
     record_excel_mp: UploadFile | None,
     raw_bank_files: list[UploadFile] | None,
@@ -224,13 +303,15 @@ async def _prepare_excel_for_run(
     """Prepara el Excel de trabajo.
 
     Modos:
+      - v5: record_excel_files + raw_bank_files => detecta records BBVA/MP por formato.
       - v4: record_excel + raw_bank_files => construye workbook runtime (record + crudos).
       - legacy: excel => usa directamente el Excel subido.
     """
     raw_files = [f for f in (raw_bank_files or []) if f is not None]
+    auto_record_files = [f for f in (record_excel_files or []) if f is not None]
 
-    # GBA: dos records separados (bancos y Mercado Pago).
-    if record_excel_bank is not None or record_excel_mp is not None:
+    # GBA: uno o más records detectados por formato (bancos y Mercado Pago).
+    if auto_record_files or record_excel_bank is not None or record_excel_mp is not None:
         if not raw_files:
             raise HTTPException(status_code=400, detail="Tenés que subir al menos 1 archivo crudo bancario.")
 
@@ -253,34 +334,96 @@ async def _prepare_excel_for_run(
             else:
                 bank_raw_paths.append(p)
 
-        if bank_raw_paths and record_excel_bank is None:
+        record_sources: list[dict] = []
+        for i, up in enumerate(auto_record_files):
+            ext = _suffix(up.filename or "", default=".xlsx")
+            p = os.path.join(tmp_dir, f"{rid}_record_auto_{i+1}{ext}")
+            await _save_upload(up, p)
+            kinds = _detect_record_kinds(p)
+            if not kinds:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "No pude reconocer el formato del record "
+                        f"'{up.filename or os.path.basename(p)}'. Esperaba headers de BBVA o Mercado Pago."
+                    ),
+                )
+            record_sources.append(
+                {
+                    "path": p,
+                    "filename": up.filename or os.path.basename(p),
+                    "kinds": kinds,
+                    "forced": False,
+                }
+            )
+
+        if record_excel_bank is not None:
+            ext = _suffix(record_excel_bank.filename or "", default=".xlsx")
+            p = os.path.join(tmp_dir, f"{rid}_record_bank{ext}")
+            await _save_upload(record_excel_bank, p)
+            record_sources.append(
+                {
+                    "path": p,
+                    "filename": record_excel_bank.filename or os.path.basename(p),
+                    "kinds": {"bank"},
+                    "forced": True,
+                }
+            )
+
+        if record_excel_mp is not None:
+            ext = _suffix(record_excel_mp.filename or "", default=".xlsx")
+            p = os.path.join(tmp_dir, f"{rid}_record_mp{ext}")
+            await _save_upload(record_excel_mp, p)
+            record_sources.append(
+                {
+                    "path": p,
+                    "filename": record_excel_mp.filename or os.path.basename(p),
+                    "kinds": {"mp"},
+                    "forced": True,
+                }
+            )
+
+        bank_record_sources = [s for s in record_sources if "bank" in (s.get("kinds") or set())]
+        mp_record_sources = [s for s in record_sources if "mp" in (s.get("kinds") or set())]
+
+        if len(bank_record_sources) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Subiste más de un record compatible con BBVA/Galicia. Usá un solo record bancario, o un Excel combinado.",
+            )
+        if len(mp_record_sources) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Subiste más de un record compatible con Mercado Pago. Usá un solo record MP, o un Excel combinado.",
+            )
+
+        if bank_raw_paths and not bank_record_sources:
             raise HTTPException(status_code=400, detail="Falta el record de movimientos bancarios para los extractos BBVA/Galicia.")
-        if mp_raw_paths and record_excel_mp is None:
+        if mp_raw_paths and not mp_record_sources:
             raise HTTPException(status_code=400, detail="Falta el record de Mercado Pago para los extractos de MP.")
 
         records: list[dict] = []
         metas: list[dict] = []
 
-        if record_excel_bank is not None:
-            rec, meta = await _build_single_record(
+        for source in record_sources:
+            kinds = set(source.get("kinds") or set())
+            source_raw_paths: list[str] = []
+            origins: list[str] = []
+            if "bank" in kinds:
+                source_raw_paths.extend(bank_raw_paths)
+                origins.extend(["BBVA", "GALICIA"])
+            if "mp" in kinds:
+                source_raw_paths.extend(mp_raw_paths)
+                origins.append("MERCADOPAGO")
+            key = "combined" if kinds == {"bank", "mp"} else ("mp" if kinds == {"mp"} else "bank")
+            rec, meta = _build_single_record_from_path(
                 tmp_dir=tmp_dir,
                 rid=rid,
-                record_upload=record_excel_bank,
-                raw_paths=bank_raw_paths,
-                key="bank",
-                origins=["BBVA", "GALICIA"],
-            )
-            records.append(rec)
-            metas.append(meta)
-
-        if record_excel_mp is not None:
-            rec, meta = await _build_single_record(
-                tmp_dir=tmp_dir,
-                rid=rid,
-                record_upload=record_excel_mp,
-                raw_paths=mp_raw_paths,
-                key="mp",
-                origins=["MERCADOPAGO"],
+                record_path=str(source["path"]),
+                original_filename=str(source.get("filename") or ""),
+                raw_paths=source_raw_paths,
+                key=key,
+                origins=origins,
             )
             records.append(rec)
             metas.append(meta)
@@ -294,6 +437,10 @@ async def _prepare_excel_for_run(
             "input_mode": InputMode.V5_SPLIT,
             "raw_bank_filenames": raw_names,
             "raw_ingestion_meta": merged_meta,
+            "record_excel_formats": [
+                {"filename": str(s.get("filename") or ""), "formats": sorted(str(k) for k in (s.get("kinds") or set()))}
+                for s in record_sources
+            ],
         }
 
     # V4 (preferido): consolidado + crudos.
@@ -385,6 +532,7 @@ def version() -> dict:
 async def compare(
     excel: UploadFile | None = File(None, description="(LEGACY) Excel ya consolidado/procesado."),
     record_excel: UploadFile | None = File(None, description="Excel consolidado (record) a actualizar."),
+    record_excel_files: list[UploadFile] | None = File(None, description="Records bancarios GBA (BBVA y/o Mercado Pago), uno o varios."),
     record_excel_bank: UploadFile | None = File(None, description="Record de movimientos bancarios (BBVA/Galicia)."),
     record_excel_mp: UploadFile | None = File(None, description="Record de Mercado Pago."),
     raw_bank_files: list[UploadFile] | None = File(None, description="Archivos crudos de bancos (BBVA/Galicia/MercadoPago)."),
@@ -450,6 +598,7 @@ async def compare(
             rid=rid,
             excel=excel,
             record_excel=record_excel,
+            record_excel_files=record_excel_files,
             record_excel_bank=record_excel_bank,
             record_excel_mp=record_excel_mp,
             raw_bank_files=raw_bank_files,
@@ -511,11 +660,19 @@ async def compare(
         meta["excel_filename"] = prepared.get("base_excel_filename")
         meta["record_excel_filename"] = prepared.get("base_excel_filename")
         meta["record_excel_filenames"] = [r.get("base_excel_filename") for r in (prepared.get("records") or [])]
+        meta["record_excel_formats"] = prepared.get("record_excel_formats")
         meta["pdfs_filenames"] = [fn for (_p, _e, fn) in pdfs]
         meta["input_mode"] = prepared.get("input_mode")
         meta["raw_bank_filenames"] = prepared.get("raw_bank_filenames")
         if isinstance(prepared.get("raw_ingestion_meta"), dict):
             meta.update(prepared["raw_ingestion_meta"])
+        if isinstance(result.get("no_encontrados"), list):
+            result["no_encontrados"] = [
+                row
+                for row in (result.get("no_encontrados") or [])
+                if str(row.get("Tipo no encontrado", "")).upper() == "RECIBO_SIN_BANCO"
+            ]
+            meta["no_encontrados_web_filtered"] = True
         return result
 
     except ExternalSchemaError as e:
@@ -540,6 +697,7 @@ async def compare(
 async def export(
     excel: UploadFile | None = File(None, description="(LEGACY) Excel ya consolidado/procesado."),
     record_excel: UploadFile | None = File(None, description="Excel consolidado (record) a actualizar."),
+    record_excel_files: list[UploadFile] | None = File(None, description="Records bancarios GBA (BBVA y/o Mercado Pago), uno o varios."),
     record_excel_bank: UploadFile | None = File(None, description="Record de movimientos bancarios (BBVA/Galicia)."),
     record_excel_mp: UploadFile | None = File(None, description="Record de Mercado Pago."),
     raw_bank_files: list[UploadFile] | None = File(None, description="Archivos crudos de bancos (BBVA/Galicia/MercadoPago)."),
@@ -547,7 +705,7 @@ async def export(
     pdf_alarcon: UploadFile | None = File(None, description="PDF de recibos Alarcón (opcional)"),
     force_validations: str | None = Form(None, description="JSON para promover Dudosos a Validados (opcional)"),
     drop_dudosos: str | None = Form(None, description="Lista JSON para quitar casos de Dudosos (opcional)"),
-    format: str = Query("xlsx", pattern="^(xlsx|noencontradosxlsx|devxlsx|zipcsv)$"),
+    format: str = Query("xlsx", pattern="^(xlsx|dudososxlsx|noencontradosxlsx|devxlsx|zipcsv)$"),
     margin_days: int = Query(5, ge=0, le=31),
     tolerance_days_suspect: int = Query(7, ge=0, le=31),
     # V3.5: multiplicador de días separado por signo.
@@ -579,7 +737,8 @@ async def export(
 
     format:
       - xlsx       -> Excel de ingresos original, completado con VALIDADOS (permite sobrescribir)
-      - noencontradosxlsx -> Excel con 4 hojas de no encontrados (BBVA, Mercado Pago, Galicia, Recibos sin banco)
+      - dudososxlsx -> Excel con Dudosos separados por origen
+      - noencontradosxlsx -> Excel con no encontrados separados por recibos/origen
       - devxlsx -> Excel técnico con hojas (Validados/Dudosos/No encontrados/Meta)
       - zipcsv  -> (legacy) zip con CSV
     """
@@ -605,6 +764,7 @@ async def export(
             rid=rid,
             excel=excel,
             record_excel=record_excel,
+            record_excel_files=record_excel_files,
             record_excel_bank=record_excel_bank,
             record_excel_mp=record_excel_mp,
             raw_bank_files=raw_bank_files,
@@ -664,6 +824,7 @@ async def export(
         result["meta"]["excel_filename"] = base_excel_filename
         result["meta"]["record_excel_filename"] = base_excel_filename
         result["meta"]["record_excel_filenames"] = [r.get("base_excel_filename") for r in (prepared.get("records") or [])]
+        result["meta"]["record_excel_formats"] = prepared.get("record_excel_formats")
         result["meta"]["pdfs_filenames"] = [fn for (_p, _e, fn) in pdfs]
         result["meta"]["input_mode"] = prepared.get("input_mode")
         result["meta"]["raw_bank_filenames"] = prepared.get("raw_bank_filenames")
@@ -682,24 +843,13 @@ async def export(
 
         if format == "xlsx":
             records = prepared.get("records") or []
-            if len(records) > 1:
-                zip_path = os.path.join(tmp_dir, f"{rid}_records_conciliados.zip")
-                with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-                    for rec in records:
-                        out_name = _download_name_from_excel_filename(rec.get("base_excel_filename"), "conciliado")
-                        out_path = os.path.join(tmp_dir, f"{rid}_{rec.get('key')}_conciliado.xlsx")
-                        export_filled_generic_excel(
-                            str(rec["working_excel_path"]),
-                            result,
-                            out_path,
-                            allowed_origins=set(rec.get("origins") or []),
-                            record_key=str(rec.get("key") or ""),
-                        )
-                        zf.write(out_path, arcname=out_name)
+            if prepared.get("input_mode") == InputMode.V5_SPLIT:
+                out_path = os.path.join(tmp_dir, f"{rid}_records_conciliados.xlsx")
+                export_combined_records_excel(records, result, out_path)
                 return FileResponse(
-                    zip_path,
-                    filename="records_conciliados.zip",
-                    media_type="application/zip",
+                    out_path,
+                    filename="records_conciliados.xlsx",
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
 
             default_empresa = None
@@ -728,6 +878,16 @@ async def export(
             out_path = os.path.join(tmp_dir, f"{rid}_no_encontrados.xlsx")
             export_no_encontrados_xlsx(result, out_path)
             dl_name = _download_name_from_excel_filename(base_excel_filename, "no_encontrados")
+            return FileResponse(
+                out_path,
+                filename=dl_name,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+        if format == "dudososxlsx":
+            out_path = os.path.join(tmp_dir, f"{rid}_dudosos.xlsx")
+            export_dudosos_xlsx(result, out_path)
+            dl_name = _download_name_from_excel_filename(base_excel_filename, "dudosos")
             return FileResponse(
                 out_path,
                 filename=dl_name,

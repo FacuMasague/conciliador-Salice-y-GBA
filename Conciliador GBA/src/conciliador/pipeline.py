@@ -1044,12 +1044,6 @@ def compare_excel_pdfs(
         suspects_and_no_bankable_only=False,
         no_encontrados_bankable_only=False,
     )
-    if isinstance(res.get("no_encontrados"), list):
-        res["no_encontrados"] = [
-            row
-            for row in (res.get("no_encontrados") or [])
-            if str(row.get("Tipo no encontrado", "")).upper() == "RECIBO_SIN_BANCO"
-        ]
     mem_mark("matched", {
         "validados": len(res.get("validados") or []),
         "dudosos": len(res.get("dudosos") or []),
@@ -1137,6 +1131,7 @@ def compare_excel_pdfs(
     if drop_dudosos:
         drop_keys = set()
         drop_exact_keys = set()
+        drop_case_ids = set()
         for it in drop_dudosos:
             try:
                 case_id = str(it.get("case_id", "") or "")
@@ -1144,6 +1139,8 @@ def compare_excel_pdfs(
                 ranking = str(it.get("ranking", "") or "")
                 if case_id and fila_excel:
                     drop_exact_keys.add((case_id, fila_excel, ranking))
+                if case_id:
+                    drop_case_ids.add(case_id)
                 drop_keys.add((
                     fila_excel,
                     str(it.get("nro_recibo", "") or ""),
@@ -1166,12 +1163,98 @@ def compare_excel_pdfs(
                 str(row.get("Ranking", "") or ""),
             )
 
+        def _is_dropped_dudoso(row: dict) -> bool:
+            case_id = str(row.get("__case_id", "") or "")
+            if case_id and case_id in drop_case_ids:
+                return True
+            return _drop_k_exact(row) in drop_exact_keys or _drop_k(row) in drop_keys
+
+        def _non_empty(v: object) -> bool:
+            return v is not None and str(v).strip() != ""
+
+        def _receipt_no_encontrado_from_dudoso(row: dict) -> dict:
+            return {
+                "Tipo no encontrado": "RECIBO_SIN_BANCO",
+                **({"Empresa": str(row.get("Empresa", "") or "")} if include_empresa else {}),
+                "Nro recibo": str(row.get("Nro recibo", "") or ""),
+                "Nro cliente": str(row.get("Nro cliente", "") or ""),
+                "Cliente": str(row.get("Cliente", "") or ""),
+                **({"CUIT recibo": str(row.get("CUIT recibo", "") or "")} if show_cuit else {}),
+                "Medio de pago": str(row.get("Medio de pago", "") or ""),
+                "Fecha recibo": row.get("Fecha recibo", ""),
+                "Importe recibo": row.get("Importe recibo", ""),
+                "Divisor": "",
+                **({"CUIT ingreso": ""} if show_cuit else {}),
+                "__case_id": str(row.get("__case_id", "") or ""),
+                "__manual_drop": True,
+            }
+
+        def _bank_no_encontrado_from_dudoso(row: dict) -> dict:
+            return {
+                "Tipo no encontrado": "BANCO_SIN_RECIBO",
+                "Origen": str(row.get("Origen", "") or ""),
+                "Fecha movimiento": row.get("Fecha movimiento", ""),
+                "Importe movimiento": row.get("Importe movimiento", ""),
+                "Detalle movimiento": str(row.get("Detalle movimiento", "") or ""),
+                "Divisor": "",
+                **({"CUIT recibo": ""} if show_cuit else {}),
+                **({"CUIT ingreso": str(row.get("CUIT ingreso", "") or "")} if show_cuit else {}),
+                "Fila Excel": row.get("Fila Excel", ""),
+                "Peso": row.get("Peso", ""),
+                "__sheet_name": str(row.get("__sheet_name", "") or ""),
+                "__record_key": str(row.get("__record_key", "") or ""),
+                "__case_id": str(row.get("__case_id", "") or ""),
+                "__manual_drop": True,
+            }
+
         kept_dudosos: List[dict] = []
+        dropped_dudosos: List[dict] = []
         for row in (res.get("dudosos") or []):
-            if _drop_k_exact(row) in drop_exact_keys or _drop_k(row) in drop_keys:
+            if _is_dropped_dudoso(row):
+                dropped = dict(row)
+                dropped["Estado dudoso"] = "Borrado"
+                dropped_dudosos.append(dropped)
                 continue
+            row["Estado dudoso"] = "Activo"
             kept_dudosos.append(row)
         res["dudosos"] = kept_dudosos
+        if dropped_dudosos:
+            res["dudosos_borrados"] = dropped_dudosos
+            no_rows = list(res.get("no_encontrados") or [])
+
+            receipt_added: set[tuple[str, str, str]] = set()
+            bank_added: set[tuple[str, str, str, str]] = set()
+            by_case: dict[str, List[dict]] = {}
+            for row in dropped_dudosos:
+                by_case.setdefault(str(row.get("__case_id", "") or ""), []).append(row)
+
+            for rows in by_case.values():
+                receipt_row = next((r for r in rows if str(r.get("Tipo fila", "")) == "PRINCIPAL"), rows[0] if rows else {})
+                if receipt_row and _non_empty(receipt_row.get("Nro recibo")):
+                    key = (
+                        str(receipt_row.get("Nro recibo", "") or ""),
+                        str(receipt_row.get("Nro cliente", "") or ""),
+                        str(receipt_row.get("Importe recibo", "") or ""),
+                    )
+                    if key not in receipt_added:
+                        no_rows.append(_receipt_no_encontrado_from_dudoso(receipt_row))
+                        receipt_added.add(key)
+
+                for row in rows:
+                    if not _non_empty(row.get("Fila Excel")) and not _non_empty(row.get("Detalle movimiento")):
+                        continue
+                    key = (
+                        str(row.get("Origen", "") or ""),
+                        str(row.get("Fila Excel", "") or ""),
+                        str(row.get("Fecha movimiento", "") or ""),
+                        str(row.get("Importe movimiento", "") or ""),
+                    )
+                    if key in bank_added:
+                        continue
+                    no_rows.append(_bank_no_encontrado_from_dudoso(row))
+                    bank_added.add(key)
+
+            res["no_encontrados"] = no_rows
 
 
     # Attach run metadata (lightweight)
