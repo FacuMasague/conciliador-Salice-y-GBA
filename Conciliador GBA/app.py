@@ -103,8 +103,8 @@ def _detect_record_kinds(record_path: str) -> set[str]:
     kinds: set[str] = set()
     try:
         for ws in wb.worksheets:
-            max_rows = min(int(ws.max_row or 1), 20)
-            max_cols = min(int(ws.max_column or 1), 80)
+            max_rows = min(int(ws.max_row or 20), 20)
+            max_cols = min(int(ws.max_column or 80), 80)
             for r in range(1, max_rows + 1):
                 headers = {_norm_excel_text(ws.cell(r, c).value) for c in range(1, max_cols + 1)}
                 if "fecha de pago" in headers:

@@ -107,10 +107,11 @@ def _norm_col(name: object) -> str:
 
 
 def _find_col(df: pd.DataFrame, candidates: list[str]) -> Optional[str]:
-    wanted = {c.strip().lower() for c in candidates}
-    for c in df.columns:
-        if _norm_col(c) in wanted:
-            return c
+    for candidate in candidates:
+        wanted = candidate.strip().lower()
+        for c in df.columns:
+            if _norm_col(c) == wanted:
+                return c
     return None
 
 
