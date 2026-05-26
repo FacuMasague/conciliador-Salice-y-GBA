@@ -13,6 +13,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 
 from src.conciliador.env_loader import load_project_env
 load_project_env()
@@ -183,7 +184,8 @@ async def _build_single_record(
     await _save_upload(record_upload, record_path)
     runtime_path = os.path.join(tmp_dir, f"{rid}_runtime_{key}.xlsx")
     if raw_paths:
-        ingest_meta = build_runtime_workbook_from_raw(
+        ingest_meta = await run_in_threadpool(
+            build_runtime_workbook_from_raw,
             record_excel_path=record_path,
             raw_bank_paths=raw_paths,
             out_excel_path=runtime_path,
@@ -201,7 +203,7 @@ async def _build_single_record(
     return record, ingest_meta
 
 
-def _build_single_record_from_path(
+async def _build_single_record_from_path(
     *,
     tmp_dir: str,
     rid: str,
@@ -214,7 +216,8 @@ def _build_single_record_from_path(
     """Construye el workbook runtime desde un record ya guardado en disco."""
     runtime_path = os.path.join(tmp_dir, f"{rid}_runtime_{key}.xlsx")
     if raw_paths:
-        ingest_meta = build_runtime_workbook_from_raw(
+        ingest_meta = await run_in_threadpool(
+            build_runtime_workbook_from_raw,
             record_excel_path=record_path,
             raw_bank_paths=raw_paths,
             out_excel_path=runtime_path,
@@ -416,7 +419,7 @@ async def _prepare_excel_for_run(
                 source_raw_paths.extend(mp_raw_paths)
                 origins.append("MERCADOPAGO")
             key = "combined" if kinds == {"bank", "mp"} else ("mp" if kinds == {"mp"} else "bank")
-            rec, meta = _build_single_record_from_path(
+            rec, meta = await _build_single_record_from_path(
                 tmp_dir=tmp_dir,
                 rid=rid,
                 record_path=str(source["path"]),
@@ -464,7 +467,8 @@ async def _prepare_excel_for_run(
             raw_names.append(up.filename or os.path.basename(p))
 
         runtime_path = os.path.join(tmp_dir, f"{rid}_runtime_record.xlsx")
-        ingest_meta = build_runtime_workbook_from_raw(
+        ingest_meta = await run_in_threadpool(
+            build_runtime_workbook_from_raw,
             record_excel_path=record_path,
             raw_bank_paths=raw_paths,
             out_excel_path=runtime_path,
@@ -620,7 +624,8 @@ async def compare(
         force_list = _parse_json_list(force_validations)
         drop_list = _parse_json_list(drop_dudosos)
 
-        result = compare_excel_pdfs(
+        result = await run_in_threadpool(
+            compare_excel_pdfs,
             working_excel_input,
             [(p, emp) for (p, emp, _fn) in pdfs],
             margin_days=margin_days,
@@ -786,7 +791,8 @@ async def export(
         force_list = _parse_json_list(force_validations)
         drop_list = _parse_json_list(drop_dudosos)
 
-        result = compare_excel_pdfs(
+        result = await run_in_threadpool(
+            compare_excel_pdfs,
             working_excel_input,
             [(p, emp) for (p, emp, _fn) in pdfs],
             margin_days=margin_days,
@@ -833,7 +839,7 @@ async def export(
 
         if format == "devxlsx":
             out_path = os.path.join(tmp_dir, f"{rid}_resultado_dev.xlsx")
-            export_xlsx(result, out_path)
+            await run_in_threadpool(export_xlsx, result, out_path)
             # Safari a veces no descarga correctamente si el content-type queda genérico.
             return FileResponse(
                 out_path,
@@ -845,7 +851,7 @@ async def export(
             records = prepared.get("records") or []
             if prepared.get("input_mode") == InputMode.V5_SPLIT:
                 out_path = os.path.join(tmp_dir, f"{rid}_records_conciliados.xlsx")
-                export_combined_records_excel(records, result, out_path)
+                await run_in_threadpool(export_combined_records_excel, records, result, out_path)
                 return FileResponse(
                     out_path,
                     filename="records_conciliados.xlsx",
@@ -858,7 +864,8 @@ async def export(
             rec = records[0] if records else {}
             out_path = os.path.join(tmp_dir, f"{rid}_ingresos_conciliados.xlsx")
             if rec.get("export_mode") == "generic":
-                export_filled_generic_excel(
+                await run_in_threadpool(
+                    export_filled_generic_excel,
                     str(rec.get("working_excel_path") or ""),
                     result,
                     out_path,
@@ -866,7 +873,13 @@ async def export(
                     record_key=str(rec.get("key") or ""),
                 )
             else:
-                export_filled_bank_excel(str(rec.get("working_excel_path") or ""), result, out_path, default_empresa=default_empresa)
+                await run_in_threadpool(
+                    export_filled_bank_excel,
+                    str(rec.get("working_excel_path") or ""),
+                    result,
+                    out_path,
+                    default_empresa=default_empresa,
+                )
             dl_name = _download_name_from_excel_filename(rec.get("base_excel_filename") or base_excel_filename, "conciliado")
             return FileResponse(
                 out_path,
@@ -876,7 +889,7 @@ async def export(
 
         if format == "noencontradosxlsx":
             out_path = os.path.join(tmp_dir, f"{rid}_no_encontrados.xlsx")
-            export_no_encontrados_xlsx(result, out_path)
+            await run_in_threadpool(export_no_encontrados_xlsx, result, out_path)
             dl_name = _download_name_from_excel_filename(base_excel_filename, "no_encontrados")
             return FileResponse(
                 out_path,
@@ -886,7 +899,7 @@ async def export(
 
         if format == "dudososxlsx":
             out_path = os.path.join(tmp_dir, f"{rid}_dudosos.xlsx")
-            export_dudosos_xlsx(result, out_path)
+            await run_in_threadpool(export_dudosos_xlsx, result, out_path)
             dl_name = _download_name_from_excel_filename(base_excel_filename, "dudosos")
             return FileResponse(
                 out_path,
@@ -895,7 +908,7 @@ async def export(
             )
 
         out_path = os.path.join(tmp_dir, f"{rid}_resultado.zip")
-        export_zip_csv(result, out_path)
+        await run_in_threadpool(export_zip_csv, result, out_path)
         return FileResponse(
             out_path,
             filename="resultado_conciliacion.zip",
