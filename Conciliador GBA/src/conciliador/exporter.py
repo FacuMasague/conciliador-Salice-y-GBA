@@ -37,6 +37,36 @@ def _coerce_export_date(v: object) -> object:
     return v
 
 
+def _stringify_long_id(value: object) -> str:
+    """Return long operation/document IDs as plain text, avoiding scientific notation."""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if value.is_integer():
+            return str(int(value))
+        return format(value, "f").rstrip("0").rstrip(".")
+
+    s = str(value).strip()
+    if not s:
+        return ""
+    s_compact = s.replace(" ", "")
+    if "e" in s_compact.lower():
+        try:
+            f = float(s_compact.replace(",", "."))
+            if abs(f - round(f)) < 1e-6:
+                return str(int(round(f)))
+            return format(f, "f").rstrip("0").rstrip(".")
+        except Exception:
+            return s
+    if s_compact.endswith(".0") and s_compact[:-2].isdigit():
+        return s_compact[:-2]
+    return s
+
+
 def _strip_calc_chain(xlsx_path: str) -> None:
     """Remove calcChain from an .xlsx to avoid Excel "repair" prompts.
 
@@ -667,6 +697,30 @@ def export_filled_generic_excel(
                 cell.number_format = src.number_format
         return col
 
+    def _normalize_mp_operation_ids(ws) -> None:
+        header_row = _find_header_row(ws)
+        headers = {
+            _norm(ws.cell(header_row, c).value): c
+            for c in range(1, min(ws.max_column or 1, 120) + 1)
+        }
+        if "fecha de pago" not in headers:
+            return
+        id_cols = [
+            headers.get("tipo de operacion"),
+            headers.get("tipo de operación"),
+            headers.get("id de operacion en mercado pago"),
+            headers.get("id de operación en mercado pago"),
+            headers.get("numero de operacion de mercado pago (operation_id)"),
+            headers.get("número de operación de mercado pago (operation_id)"),
+            headers.get("numero de operacion de mercado pago"),
+            headers.get("número de operación de mercado pago"),
+        ]
+        for col in [c for c in id_cols if c is not None]:
+            for row_idx in range(header_row + 1, (ws.max_row or header_row) + 1):
+                cell = ws.cell(row_idx, int(col))
+                cell.value = _stringify_long_id(cell.value)
+                cell.number_format = "@"
+
     def _ensure_cols(ws) -> dict[str, int]:
         header_row = _find_header_row(ws)
         cols = {
@@ -773,6 +827,9 @@ def export_filled_generic_excel(
         if isinstance(importe_cell.value, (int, float)):
             importe_cell.number_format = AR_NUMBER_FORMAT_TRIM
         touched = True
+
+    for sheet_name in wb.sheetnames:
+        _normalize_mp_operation_ids(wb[sheet_name])
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     try:
@@ -1130,37 +1187,6 @@ def export_filled_bank_excel(
                 return None
         return None
 
-    def _stringify_op_rel(value) -> str:
-        """Normaliza Operación Relacionada para evitar notación científica en Excel."""
-        if value is None:
-            return ""
-        if isinstance(value, bool):
-            return str(value)
-        if isinstance(value, int):
-            return str(value)
-        if isinstance(value, float):
-            if value.is_integer():
-                return str(int(value))
-            return format(value, "f").rstrip("0").rstrip(".")
-
-        s = str(value).strip()
-        if not s:
-            return ""
-        s_compact = s.replace(" ", "")
-        # Ejemplos vistos: "1,4382E+11" / "1.4382E+11"
-        if "e" in s_compact.lower():
-            s_for_float = s_compact.replace(",", ".")
-            try:
-                f = float(s_for_float)
-                if abs(f - round(f)) < 1e-6:
-                    return str(int(round(f)))
-                return format(f, "f").rstrip("0").rstrip(".")
-            except Exception:
-                return s
-        if s_compact.endswith(".0") and s_compact[:-2].isdigit():
-            return s_compact[:-2]
-        return s
-
     def _choose_bbva_sheet(row: dict) -> str | None:
         """Intenta decidir entre SALICE BBVA y  ALARCON BBVA usando el contenido de la fila."""
         cands = _sheet_candidates("BBVA")
@@ -1419,7 +1445,7 @@ def export_filled_bank_excel(
                         continue
             if op_col and rr > header_row:
                 raw_val = ws_mp.cell(rr, op_col).value
-                writes.setdefault(sheet, []).append((mapped_rr, op_col, _stringify_op_rel(raw_val), "inlineStr"))
+                writes.setdefault(sheet, []).append((mapped_rr, op_col, _stringify_long_id(raw_val), "inlineStr"))
             if cuit_col:
                 writes.setdefault(sheet, []).append((mapped_rr, cuit_col, "", "inlineStr"))
 

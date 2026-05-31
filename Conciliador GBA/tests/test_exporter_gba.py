@@ -97,3 +97,41 @@ def test_export_filled_generic_excel_writes_into_exact_mp_month_sheet(tmp_path):
     assert "recibo" not in headers_enero
     recibo_col = headers_marzo.index("recibo") + 1
     assert str(ws_marzo.cell(2, recibo_col).value) == "272642"
+
+
+def test_export_filled_generic_excel_forces_mp_operation_id_text(tmp_path):
+    p = tmp_path / "mp_numeric_ids.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "MAYO"
+    ws.append(["Fecha de Pago", "Tipo de Operación", "Operación Relacionada", "Importe", "Control Logistica"])
+    ws.append(["2026-05-02 09:47:06", 157000000000.0, "available_money", 13524.57, ""])
+    ws.cell(2, 2).number_format = "0.00E+00"
+    wb.save(p)
+
+    result = {
+        "validados": [
+            {
+                "Ranking": 1,
+                "Origen": "MERCADOPAGO",
+                "Fila Excel": 2,
+                "Nro cliente": "10054",
+                "Cliente": "Cliente MP",
+                "Nro recibo": "92039",
+                "Fecha recibo": "2026-05-02",
+                "Medio de pago": "MERCADOPAGO",
+                "Importe recibo": 13524.57,
+                "__sheet_name": "MAYO",
+                "__record_key": "mp",
+            }
+        ]
+    }
+
+    out = tmp_path / "mp_numeric_ids_out.xlsx"
+    export_filled_generic_excel(str(p), result, str(out), allowed_origins={"MERCADOPAGO"}, record_key="mp")
+
+    wb_out = openpyxl.load_workbook(out, data_only=False)
+    cell = wb_out["MAYO"].cell(2, 2)
+    assert cell.value == "157000000000"
+    assert cell.data_type == "s"
+    assert cell.number_format == "@"
