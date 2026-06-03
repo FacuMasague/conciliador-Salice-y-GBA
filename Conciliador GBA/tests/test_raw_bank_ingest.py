@@ -474,7 +474,7 @@ def test_appended_rows_have_no_gap_and_are_oldest_to_newest(tmp_path):
     assert str(ws.cell(6, 1).value).startswith("03-02-2026")
 
 
-def test_build_runtime_workbook_from_raw_ignores_bbva_daily_for_receipts_end_date(tmp_path):
+def test_build_runtime_workbook_from_raw_uses_bbva_daily_for_receipts_end_date(tmp_path):
     record_path = tmp_path / "record.xlsx"
     _build_record_workbook(str(record_path))
 
@@ -515,7 +515,7 @@ def test_build_runtime_workbook_from_raw_ignores_bbva_daily_for_receipts_end_dat
         out_excel_path=str(out_path),
     )
 
-    assert meta["raw_max_date"] == "2026-03-03"
+    assert meta["raw_max_date"] == "2026-03-04"
 
 
 def test_build_runtime_workbook_from_raw_ignores_stale_file_for_receipts_start_date(tmp_path):

@@ -143,6 +143,12 @@ def _iso_max(values: list[str | None]) -> str | None:
     return max(clean) if clean else None
 
 
+def _raw_api_date_override(prepared: dict, key: str) -> str | None:
+    value = (prepared.get("raw_ingestion_meta") or {}).get(key)
+    clean = str(value or "").strip()
+    return clean or None
+
+
 class InputMode:
     """Constantes para el campo input_mode de los resultados de /compare y /export."""
     LEGACY = "legacy_excel"
@@ -648,11 +654,15 @@ async def compare(
             receipts_source=source,
             api_receipts_days=api_receipts_days,
             api_empresa_filter=api_empresa_filter,
-            api_start_date_override=(str(api_start_date).strip() or None) if api_start_date else None,
+            api_start_date_override=(
+                (str(api_start_date).strip() or None)
+                if api_start_date
+                else _raw_api_date_override(prepared, "raw_min_date")
+            ),
             api_end_date_override=(
                 (str(api_end_date).strip() or None)
                 if api_end_date
-                else (str((prepared.get("raw_ingestion_meta") or {}).get("raw_max_date") or "").strip() or None)
+                else _raw_api_date_override(prepared, "raw_max_date")
             ),
             force_validations=force_list,
             drop_dudosos=drop_list,
@@ -815,11 +825,15 @@ async def export(
             receipts_source=source,
             api_receipts_days=api_receipts_days,
             api_empresa_filter=api_empresa_filter,
-            api_start_date_override=(str(api_start_date).strip() or None) if api_start_date else None,
+            api_start_date_override=(
+                (str(api_start_date).strip() or None)
+                if api_start_date
+                else _raw_api_date_override(prepared, "raw_min_date")
+            ),
             api_end_date_override=(
                 (str(api_end_date).strip() or None)
                 if api_end_date
-                else (str((prepared.get("raw_ingestion_meta") or {}).get("raw_max_date") or "").strip() or None)
+                else _raw_api_date_override(prepared, "raw_max_date")
             ),
             force_validations=force_list,
             drop_dudosos=drop_list,

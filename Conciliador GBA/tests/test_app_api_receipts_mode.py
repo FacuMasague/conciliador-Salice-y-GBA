@@ -105,6 +105,36 @@ def test_compare_api_mode_passes_manual_receipts_date_range(monkeypatch):
     assert observed["end"] == "2026-03-07"
 
 
+def test_compare_api_mode_uses_raw_ingestion_date_range_when_dates_are_not_manual(monkeypatch):
+    client = TestClient(app_module.app)
+    observed = {"start": None, "end": None}
+
+    async def _fake_prepare(**kwargs):
+        return {
+            "working_excel_path": "/tmp/fake.xlsx",
+            "working_excel_paths": ["/tmp/fake.xlsx"],
+            "records": [],
+            "excel_record_map": {},
+            "base_excel_filename": "record.xlsx",
+            "input_mode": "v5_split_records",
+            "raw_bank_filenames": ["raw-may-june.xlsx"],
+            "raw_ingestion_meta": {"raw_min_date": "2026-05-29", "raw_max_date": "2026-06-02"},
+        }
+
+    def _fake_compare(*args, **kwargs):
+        observed["start"] = kwargs.get("api_start_date_override")
+        observed["end"] = kwargs.get("api_end_date_override")
+        return {"validados": [], "dudosos": [], "no_encontrados": [], "meta": {"ok": True}}
+
+    monkeypatch.setattr(app_module, "_prepare_excel_for_run", _fake_prepare)
+    monkeypatch.setattr(app_module, "compare_excel_pdfs", _fake_compare)
+
+    r = client.post("/compare?receipts_source=api")
+    assert r.status_code == 200, r.text
+    assert observed["start"] == "2026-05-29"
+    assert observed["end"] == "2026-06-02"
+
+
 def test_export_api_mode_returns_combined_workbook_when_split_records_are_prepared(monkeypatch, tmp_path):
     client = TestClient(app_module.app)
 

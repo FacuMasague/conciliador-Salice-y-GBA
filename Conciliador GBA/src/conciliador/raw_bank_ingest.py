@@ -1193,15 +1193,11 @@ def build_runtime_workbook_from_raw(
                 file_max_date = row.fecha
             if raw_min_date_all is None or row.fecha < raw_min_date_all:
                 raw_min_date_all = row.fecha
-            eligible_for_cutoff = True
-            if row.bank == "BBVA":
-                eligible_for_cutoff = _is_bbva_historical_sheet_name(row.source_sheet)
-            if eligible_for_cutoff and (raw_max_date is None or row.fecha > raw_max_date):
+            if raw_max_date is None or row.fecha > raw_max_date:
                 raw_max_date = row.fecha
-            if eligible_for_cutoff:
-                rows_eligible_for_end += 1
-                if file_receipts_end_max_date is None or row.fecha > file_receipts_end_max_date:
-                    file_receipts_end_max_date = row.fecha
+            rows_eligible_for_end += 1
+            if file_receipts_end_max_date is None or row.fecha > file_receipts_end_max_date:
+                file_receipts_end_max_date = row.fecha
         files_meta.append(
             {
                 "filename": os.path.basename(p),
