@@ -890,13 +890,101 @@ def export_combined_records_excel(
             rows.append(row)
         return rows
 
+    def _sheet_from_ingestion_meta(wb: openpyxl.Workbook, group: str) -> str | None:
+        meta = result.get("meta") if isinstance(result.get("meta"), dict) else {}
+        summary = meta.get("raw_ingestion_summary") if isinstance(meta, dict) else None
+        if not isinstance(summary, dict):
+            return None
+        bank_key = "MERCADOPAGO" if group == "mp" else "BBVA"
+        data = summary.get(bank_key)
+        if not isinstance(data, dict):
+            return None
+        sheet_raw = str(data.get("sheet") or "").strip()
+        if not sheet_raw:
+            return None
+        # Si un archivo crudo abarca más de una hoja mensual, la última hoja
+        # listada es la más reciente en la práctica del ingestador.
+        for sheet_name in reversed([part.strip() for part in sheet_raw.split(",") if part.strip()]):
+            if sheet_name in wb.sheetnames:
+                return sheet_name
+        return None
+
+    def _parse_export_sheet_date(value: object) -> dt.date | None:
+        if value is None:
+            return None
+        if isinstance(value, dt.datetime):
+            return value.date()
+        if isinstance(value, dt.date):
+            return value
+        s = str(value).strip()
+        if not s:
+            return None
+        try:
+            return dt.datetime.fromisoformat(s.replace("Z", "+00:00")).date()
+        except Exception:
+            pass
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y %H:%M:%S", "%d-%m-%Y"):
+            try:
+                return dt.datetime.strptime(s[:19], fmt).date()
+            except Exception:
+                pass
+        return None
+
+    def _latest_mp_sheet(wb: openpyxl.Workbook) -> str | None:
+        best: tuple[dt.date, str] | None = None
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            headers = _sheet_headers(ws)
+            if "fecha de pago" not in headers:
+                continue
+            fecha_col = None
+            max_cols = min(int(ws.max_column or 1), 80)
+            for c in range(1, max_cols + 1):
+                if _norm(ws.cell(1, c).value) == "fecha de pago":
+                    fecha_col = c
+                    break
+            if fecha_col is None:
+                continue
+            sheet_max: dt.date | None = None
+            max_rows = int(ws.max_row or 1)
+            for r in range(2, max_rows + 1):
+                d = _parse_export_sheet_date(ws.cell(r, fecha_col).value)
+                if d is not None and (sheet_max is None or d > sheet_max):
+                    sheet_max = d
+            if sheet_max is not None and (best is None or sheet_max > best[0]):
+                best = (sheet_max, sheet_name)
+        return best[1] if best else None
+
     def _pick_source_sheet(wb: openpyxl.Workbook, group: str, rows: list[dict]) -> str | None:
+        meta_sheet = _sheet_from_ingestion_meta(wb, group)
+        if meta_sheet:
+            return meta_sheet
+
         preferred: list[str] = []
         for row in rows:
             sheet_name = str(row.get("__sheet_name") or "").strip()
             if sheet_name and sheet_name in wb.sheetnames and sheet_name not in preferred:
                 preferred.append(sheet_name)
-        for sheet_name in preferred + list(wb.sheetnames):
+        for sheet_name in preferred:
+            ws = wb[sheet_name]
+            headers = _sheet_headers(ws)
+            if group == "mp" and "fecha de pago" in headers:
+                return sheet_name
+            if group == "bank" and "fecha" in headers and "concepto" in headers and (
+                "credito" in headers or "crédito" in headers
+            ):
+                return sheet_name
+            if group == "bank" and "fecha" in headers and (
+                "importe" in headers or "creditos" in headers or "créditos" in headers
+            ) and (
+                "razon social" in headers or "razón social" in headers or "cuit" in headers
+            ):
+                return sheet_name
+        if group == "mp":
+            latest = _latest_mp_sheet(wb)
+            if latest:
+                return latest
+        for sheet_name in wb.sheetnames:
             ws = wb[sheet_name]
             headers = _sheet_headers(ws)
             if group == "mp" and "fecha de pago" in headers:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import openpyxl
 
-from src.conciliador.exporter import export_filled_generic_excel
+from src.conciliador.exporter import export_combined_records_excel, export_filled_generic_excel
 from src.conciliador.excel_loader import load_bank_txns
 
 
@@ -135,3 +135,43 @@ def test_export_filled_generic_excel_forces_mp_operation_id_text(tmp_path):
     assert cell.value == "157000000000"
     assert cell.data_type == "s"
     assert cell.number_format == "@"
+
+
+def test_export_combined_records_prefers_touched_mp_month_sheet(tmp_path):
+    mp_path = tmp_path / "mp_runtime.xlsx"
+    wb = openpyxl.Workbook()
+    ws_junio = wb.active
+    ws_junio.title = "JUNIO"
+    ws_junio.append(["Fecha de Pago", "Tipo de Operación", "Operación Relacionada", "Importe", "Control Logistica"])
+    ws_junio.append(["2026-06-30T13:45:15.000-04:00", "166510534466", "available_money", 1338227.19, ""])
+    ws_julio = wb.create_sheet("JULIO")
+    ws_julio.append(["Fecha de Pago", "Tipo de Operación", "Operación Relacionada", "Importe", "Control Logistica"])
+    ws_julio.append(["2026-07-01T08:27:10", "165790389871", "available_money", 1000.0, ""])
+    wb.save(mp_path)
+
+    out = tmp_path / "combined.xlsx"
+    export_combined_records_excel(
+        [
+            {
+                "key": "mp",
+                "working_excel_path": str(mp_path),
+                "base_excel_filename": "Mercado Pago.xlsx",
+                "origins": ["MERCADOPAGO"],
+                "export_mode": "generic",
+            }
+        ],
+        {
+            "validados": [],
+            "meta": {
+                "raw_ingestion_summary": {
+                    "MERCADOPAGO": {"input": 1, "appended": 1, "duplicates_skipped": 0, "sheet": "JULIO"}
+                }
+            },
+        },
+        str(out),
+    )
+
+    wb_out = openpyxl.load_workbook(out, data_only=True)
+    ws_out = wb_out["Mercado Pago"]
+    assert ws_out.cell(2, 1).value == "2026-07-01T08:27:10"
+    assert str(ws_out.cell(2, 2).value) == "165790389871"
