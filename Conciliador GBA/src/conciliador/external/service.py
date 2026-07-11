@@ -7,7 +7,7 @@ import unicodedata
 from typing import Any, Dict, List, Optional, Tuple
 
 from .errors import ExternalSchemaError
-from .padron_api_client import fetch_padron_payload
+from .padron_api_client import fetch_padron_payload, fetch_repartidores_payload, fetch_vendedores_payload
 from .receipts_api_client import (
     fetch_receipts_payload,
     _base_url as _receipts_base_url,
@@ -251,6 +251,102 @@ def _vendor_label_from_comprobante(row: Dict[str, Any]) -> str:
     if nested_id:
         return nested_id
     return ""
+
+
+def _repartidor_id_from_comprobante(row: Dict[str, Any]) -> str:
+    value = _norm_numeric_id(
+        _get_any(
+            row,
+            "repartidorID", "repartidor_id", "RepartidorID", "idRepartidor",
+        )
+        or _get_any(
+            row.get("datosClientes") if isinstance(row.get("datosClientes"), dict) else {},
+            "repartidorID", "repartidor_id", "RepartidorID",
+        )
+    )
+    return "" if value == "0" else value
+
+
+def _vendedor_id_from_comprobante(row: Dict[str, Any]) -> str:
+    value = _norm_numeric_id(
+        _get_any(row, "vendedorID", "vendedor_id", "VendedorID", "idVendedor")
+        or _get_any(
+            row.get("datosClientes") if isinstance(row.get("datosClientes"), dict) else {},
+            "VendedorDelClienteID", "vendedorDelClienteID", "vendedorID", "VendedorID",
+        )
+    )
+    return "" if value == "0" else value
+
+
+def _repartidores_lookup() -> tuple[Dict[str, str], list[str]]:
+    try:
+        resp = fetch_repartidores_payload(empresa_filter="GBA")
+    except Exception as exc:
+        return {}, [f"No se pudo obtener el maestro de repartidores: {exc}"]
+    out: Dict[str, str] = {}
+    for row in resp.payload.get("repartidores") or []:
+        if not isinstance(row, dict):
+            continue
+        rid = _norm_numeric_id(_get_any(row, "repartidorID", "repartidor_id", "RepartidorID", "id"))
+        name = _first_nonempty_text([
+            _get_any(row, "razonSocial", "razon_social", "RazonSocial"),
+            _get_any(row, "fantasia", "Fantasia"),
+            _get_any(row, "nombre", "descripcion"),
+        ])
+        if rid and name:
+            out[rid] = name
+    return out, list(resp.warnings or [])
+
+
+def _vendedores_lookup() -> tuple[Dict[str, str], list[str]]:
+    try:
+        resp = fetch_vendedores_payload(empresa_filter="GBA")
+    except Exception as exc:
+        return {}, [f"No se pudo obtener el maestro de vendedores: {exc}"]
+    out: Dict[str, str] = {}
+    for row in resp.payload.get("vendedores") or []:
+        if not isinstance(row, dict):
+            continue
+        vid = _norm_numeric_id(_get_any(row, "vendedorID", "vendedor_id", "VendedorID", "id"))
+        name = _first_nonempty_text([
+            _get_any(row, "razonSocial", "razon_social", "RazonSocial"),
+            _get_any(row, "fantasia", "Fantasia"),
+            _get_any(row, "nombre", "descripcion"),
+        ])
+        if vid and name:
+            out[vid] = name
+    return out, list(resp.warnings or [])
+
+
+def _cliente_vendedor_repartidor_lookup(comprobantes: List[dict]) -> tuple[Dict[str, Dict[str, str]], list[str]]:
+    cliente_ids = list(dict.fromkeys(
+        _norm_numeric_id(_get_any(row, "clienteID", "cliente_id", "ClienteID"))
+        for row in comprobantes
+        if isinstance(row, dict)
+    ))
+    cliente_ids = [cid for cid in cliente_ids if cid]
+    if not cliente_ids:
+        return {}, []
+    try:
+        resp = fetch_padron_payload(empresa_filter="GBA", cliente_ids=cliente_ids)
+    except Exception as exc:
+        return {}, [f"No se pudo obtener el vendedor de los clientes: {exc}"]
+    out: Dict[str, Dict[str, str]] = {}
+    for row in resp.payload.get("clientes") or []:
+        if not isinstance(row, dict):
+            continue
+        cid = _norm_numeric_id(_get_any(row, "clienteID", "cliente_id", "ClienteID"))
+        rid = _norm_numeric_id(_get_any(row, "repartidorID", "repartidor_id", "RepartidorID"))
+        vid = _norm_numeric_id(
+            _get_any(row, "vendedorID", "vendedor_id", "VendedorID")
+            or _get_any(row, "enEstaSucursal_VendedorID")
+        )
+        if cid:
+            out[cid] = {
+                "vendedor_id": "" if vid == "0" else vid,
+                "repartidor_id": "" if rid == "0" else rid,
+            }
+    return out, list(resp.warnings or [])
 
 
 def _forma_pago_id_from_row(row: Dict[str, Any]) -> str:
@@ -1071,6 +1167,17 @@ def fetch_receipts_and_payments(
                 payments_flat.append(_to_external_payment(_expect_obj(pit, f"receipts[{i}].payments[{j}]"), receipt))
     # Contract option C (GESI): payload.comprobantes[] + payload.formasDePago[]
     elif isinstance(payload.get("comprobantes"), list):
+        if str(empresa_filter or "").strip().upper() == "GBA":
+            repartidores_by_id, repartidores_warnings = _repartidores_lookup()
+            vendedores_by_id, vendedores_warnings = _vendedores_lookup()
+            cliente_asignaciones, cliente_asignaciones_warnings = _cliente_vendedor_repartidor_lookup(payload["comprobantes"])
+        else:
+            repartidores_by_id, repartidores_warnings = {}, []
+            vendedores_by_id, vendedores_warnings = {}, []
+            cliente_asignaciones, cliente_asignaciones_warnings = {}, []
+        resp.warnings.extend(repartidores_warnings)
+        resp.warnings.extend(vendedores_warnings)
+        resp.warnings.extend(cliente_asignaciones_warnings)
         formas_rows = payload.get("formasDePago")
         formas_by_id: Dict[str, str] = {}
         if isinstance(formas_rows, list):
@@ -1115,6 +1222,9 @@ def fetch_receipts_and_payments(
                 _get_any(c, "clienteID", "cliente_id", "clienteId", "ClienteID")
                 or ""
             ).strip()
+            cliente_asignacion = cliente_asignaciones.get(_norm_numeric_id(nro_cliente), {})
+            resolved_vendedor_id = _vendedor_id_from_comprobante(c) or cliente_asignacion.get("vendedor_id", "")
+            resolved_repartidor_id = _repartidor_id_from_comprobante(c) or cliente_asignacion.get("repartidor_id", "")
             if not nro_recibo or not nro_cliente:
                 skipped_without_receipt_number += 1
                 continue
@@ -1262,7 +1372,19 @@ def fetch_receipts_and_payments(
                     nro_recibo=nro_recibo,
                     nro_cliente=nro_cliente,
                     cliente_nombre=str(_get_any(c, "razonSocial", "razon_social", "RazonSocial") or "").strip(),
-                    vendedor=_vendor_label_from_comprobante(c),
+                    vendedor=(
+                        _vendor_label_from_comprobante(c)
+                        if " - " in _vendor_label_from_comprobante(c)
+                        else (
+                            f"{resolved_vendedor_id} - {vendedores_by_id[resolved_vendedor_id]}"
+                            if resolved_vendedor_id in vendedores_by_id
+                            else (
+                                f"{resolved_repartidor_id} - {repartidores_by_id[resolved_repartidor_id]}"
+                                if resolved_repartidor_id in repartidores_by_id
+                                else _vendor_label_from_comprobante(c)
+                            )
+                        )
+                    ),
                     medio_pago=medio_label,
                     fecha_pago=_parse_date_yyyy_mm_dd(
                         _get_any(

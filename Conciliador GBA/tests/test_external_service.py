@@ -355,6 +355,80 @@ def test_fetch_receipts_and_payments_gesi_reads_vendor_from_datos_clientes(monke
     assert payments[0].vendedor == "345"
 
 
+def test_fetch_receipts_and_payments_gba_resolves_repartidor_name(monkeypatch):
+    payload = {
+        "comprobantes": [{
+            "empresaID": 2,
+            "numero": 70023,
+            "nro_recibo_pm": "PMCBR_70023",
+            "codigoDeImportacion": "PMCBR_70023",
+            "clienteID": 33119,
+            "razonSocial": "Cliente",
+            "repartidorID": 211,
+            "formaDePagoID": 5,
+            "fechaDeEmision": "2026-04-07",
+            "importeTotal": 1234.0,
+        }],
+        "formasDePago": [{"formaDePagoID": 5, "descripcion": "Transferencia Bancaria"}],
+    }
+    monkeypatch.setattr(
+        "src.conciliador.external.service.fetch_receipts_payload",
+        lambda days, empresa_filter=None: _Resp(payload, request_id="r-repartidor"),
+    )
+    monkeypatch.setattr(
+        "src.conciliador.external.service._repartidores_lookup",
+        lambda: ({"211": "Luzzi Gustavo"}, []),
+    )
+    monkeypatch.setattr(
+        "src.conciliador.external.service._vendedores_lookup",
+        lambda: ({}, []),
+    )
+    monkeypatch.setattr(
+        "src.conciliador.external.service._cliente_vendedor_repartidor_lookup",
+        lambda rows: ({}, []),
+    )
+
+    payments, _meta = fetch_receipts_and_payments(3, "GBA")
+
+    assert payments[0].vendedor == "211 - Luzzi Gustavo"
+
+
+def test_fetch_receipts_and_payments_gba_resolves_cliente_vendedor_name(monkeypatch):
+    payload = {
+        "comprobantes": [{
+            "empresaID": 2,
+            "numero": 70024,
+            "nro_recibo_pm": "PMCBR_70024",
+            "codigoDeImportacion": "PMCBR_70024",
+            "clienteID": 18078,
+            "razonSocial": "Cliente",
+            "vendedorID": 0,
+            "repartidorID": 0,
+            "formaDePagoID": 5,
+            "fechaDeEmision": "2026-04-07",
+            "importeTotal": 1234.0,
+        }],
+        "formasDePago": [{"formaDePagoID": 5, "descripcion": "Transferencia Bancaria"}],
+    }
+    monkeypatch.setattr(
+        "src.conciliador.external.service.fetch_receipts_payload",
+        lambda days, empresa_filter=None: _Resp(payload, request_id="r-vendedor"),
+    )
+    monkeypatch.setattr("src.conciliador.external.service._repartidores_lookup", lambda: ({}, []))
+    monkeypatch.setattr(
+        "src.conciliador.external.service._vendedores_lookup",
+        lambda: ({"65": "Vendedor Sesenta y Cinco"}, []),
+    )
+    monkeypatch.setattr(
+        "src.conciliador.external.service._cliente_vendedor_repartidor_lookup",
+        lambda rows: ({"18078": {"vendedor_id": "65", "repartidor_id": ""}}, []),
+    )
+
+    payments, _meta = fetch_receipts_and_payments(3, "GBA")
+
+    assert payments[0].vendedor == "65 - Vendedor Sesenta y Cinco"
+
+
 def test_fetch_receipts_and_payments_gesi_reads_nested_vendor_name_variants(monkeypatch):
     payload = {
         "comprobantes": [

@@ -33,7 +33,7 @@ from src.conciliador.external.errors import ExternalConfigError, ExternalProvide
 
 
 # Versión visible en UI y en /docs
-APP_VERSION = "1.2.20"
+APP_VERSION = "1.3.0"
 app = FastAPI(title="Conciliador de Recibos e Ingresos", version=APP_VERSION)
 
 # Para desarrollo web (frontend local) sin fricción.
