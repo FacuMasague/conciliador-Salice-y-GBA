@@ -71,6 +71,7 @@
     button:disabled { opacity: .6; cursor: not-allowed; }
     table { border-collapse: separate; border-spacing: 0; width: 100%; }
     th, td { border-right: 1px solid #dfe4ea; border-bottom: 1px solid #dfe4ea; padding: 9px 10px; font-size: 12px; vertical-align: top; }
+    th.bank-section-start, td.bank-section-start { border-left: 3px solid #657789; }
     tr > *:first-child { border-left: 1px solid #dfe4ea; }
     thead tr:first-child th { border-top: 1px solid #dfe4ea; }
     th {
@@ -1330,6 +1331,7 @@
       const trh = document.createElement('tr');
       cols.forEach(c => {
         const th = document.createElement('th');
+        if (c === 'Origen') th.classList.add('bank-section-start');
         if (sortableCols.includes(c)) {
           th.classList.add('sortable');
           if (activeColumn === c) th.classList.add('is-active');
@@ -1356,6 +1358,7 @@
         const tr = document.createElement('tr');
         cols.forEach(c => {
           const td = document.createElement('td');
+          if (c === 'Origen') td.classList.add('bank-section-start');
           if (actionHeader && c === actionHeader) {
             const canShowAction = !opts || typeof opts.actionWhen !== 'function' ? true : !!opts.actionWhen(r, idx);
             if (canShowAction) {
@@ -1471,7 +1474,7 @@
         'Medio de pago': base['Medio de pago'] || '',
         'Fecha recibo': base['Fecha recibo'] || '',
         'Importe recibo': base['Importe recibo'] || '',
-        'Divisor': '',
+        'Vendedor/Repartidor': base['Vendedor/Repartidor'] || '',
         'Peso': base['Peso'] || '',
         '__case_id': base.__case_id || '',
         '__manual_drop': true,
@@ -1551,7 +1554,7 @@
       const cleanRow = { ...row };
       if (principalRef) {
         // Si el usuario valida un alternativo, completamos datos de recibo del principal.
-        for (const key of ['Empresa', 'Nro recibo', 'Nro cliente', 'Cliente', 'Medio de pago', 'Fecha recibo', 'Importe recibo', 'Divisor']) {
+        for (const key of ['Empresa', 'Nro recibo', 'Nro cliente', 'Cliente', 'Vendedor/Repartidor', 'Medio de pago', 'Fecha recibo', 'Importe recibo']) {
           if (cleanRow[key] === undefined || cleanRow[key] === null || String(cleanRow[key]).trim() === '') {
             cleanRow[key] = principalRef[key];
           }

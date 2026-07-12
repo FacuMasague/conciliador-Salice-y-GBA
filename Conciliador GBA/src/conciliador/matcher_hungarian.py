@@ -527,7 +527,6 @@ def match_hungarian(
             "Medio de pago": p.medio_pago,
             "Fecha recibo": p.fecha_pago,
             "Importe recibo": round(float(p.importe_pago), 2),
-            "Divisor": item_label,
             "__payment_lookup_key": str(id(p)),
         }
 
@@ -846,7 +845,6 @@ def match_hungarian(
                 "Medio de pago": "",
                 "Fecha recibo": "",
                 "Importe recibo": "",
-                "Divisor": "",
                 **_candidate_for(t2, p),
                 "Motivo": _build_motivo(
                     p.empresa,
@@ -897,7 +895,6 @@ def match_hungarian(
             "Medio de pago": p.medio_pago,
             "Fecha recibo": p.fecha_pago,
             "Importe recibo": round(float(p.importe_pago), 2),
-            "Divisor": "",
             "CUIT ingreso": "",
             "Peso": (round(float(best_cost), 2) if best_cost is not None else ""),
             "__payment_lookup_key": str(id(p)),
@@ -931,7 +928,6 @@ def match_hungarian(
                     "Fecha movimiento": t.fecha.isoformat(),
                     "Importe movimiento": round(float(t.importe), 2),
                     "Detalle movimiento": t.texto_ref,
-                    "Divisor": "",
                     "CUIT recibo": "",
                     "CUIT ingreso": str(t.cuit or ""),
                     "Fila Excel": t.row_index,

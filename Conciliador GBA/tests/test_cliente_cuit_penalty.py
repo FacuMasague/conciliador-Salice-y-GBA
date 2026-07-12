@@ -69,7 +69,7 @@ def test_matcher_restricts_txn_to_same_cuit_when_plausible_match_exists():
     assert res["validados"][0]["Nro cliente"] == "9999"
     assert res["validados"][0]["Nro recibo"] == "101"
     assert res["validados"][0]["Peso"] == pytest.approx(round(_amount_difference_penalty(20.0), 2))
-    assert res["validados"][0]["Divisor"] == ""
+    assert "Divisor" not in res["validados"][0]
     assert "Aclaración recibo" not in res["validados"][0]
     assert res["validados"][0]["CUIT recibo"] == "20301020304"
     assert res["validados"][0]["CUIT ingreso"] == "20301020304"
@@ -213,7 +213,7 @@ def test_no_encontrados_include_cuit_fields():
     )
     assert len(res["no_encontrados"]) == 1
     row = res["no_encontrados"][0]
-    assert row["Divisor"] == ""
+    assert "Divisor" not in row
     assert "Aclaración recibo" not in row
     assert row["CUIT recibo"] == "20301020304"
     assert row["CUIT ingreso"] == ""

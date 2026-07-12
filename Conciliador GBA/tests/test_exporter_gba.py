@@ -23,6 +23,7 @@ def test_export_filled_generic_excel_writes_tracking_columns_into_gba_bank_recor
                 "Fila Excel": 2,
                 "Nro cliente": "33119",
                 "Cliente": "Cliente GBA",
+                "Vendedor/Repartidor": "65 - Yanina Andrade",
                 "Nro recibo": "272641",
                 "Fecha recibo": "2026-03-20",
                 "Medio de pago": "TRANSFERENCIA",
@@ -42,12 +43,15 @@ def test_export_filled_generic_excel_writes_tracking_columns_into_gba_bank_recor
     assert "ok" in headers
     assert "cliente nombre" in headers
     assert "recibo" in headers
+    assert "vendedor/fletero" in headers
     ok_col = headers.index("ok") + 1
     cliente_nombre_col = headers.index("cliente nombre") + 1
     recibo_col = headers.index("recibo") + 1
+    vendedor_col = headers.index("vendedor/fletero") + 1
     assert ws_out.cell(2, ok_col).value == "ok"
     assert ws_out.cell(2, cliente_nombre_col).value == "Cliente GBA"
     assert str(ws_out.cell(2, recibo_col).value) == "272641"
+    assert ws_out.cell(2, vendedor_col).value == "65 - Yanina Andrade"
 
     txns = load_bank_txns(str(out), record_key="bank")
     assert len(txns) == 1

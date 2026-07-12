@@ -39,10 +39,10 @@ def test_export_no_encontrados_xlsx_splits_into_3_operational_sheets_without_emp
                 "Nro recibo": "68744",
                 "Nro cliente": "30424",
                 "Cliente": "Cliente Demo",
+                "Vendedor/Repartidor": "65 - Yanina Andrade",
                 "Medio de pago": "TRANSFERENCIA",
                 "Fecha recibo": "2026-02-23",
                 "Importe recibo": 575511.55,
-                "Divisor": "",
             },
         ]
     }
@@ -79,6 +79,8 @@ def test_export_no_encontrados_xlsx_splits_into_3_operational_sheets_without_emp
     assert "Nro cliente" in headers_rec
     assert "Cliente" in headers_rec
     assert "Importe recibo" in headers_rec
+    assert "Vendedor/Repartidor" in headers_rec
+    assert "Divisor" not in headers_rec
     assert "Origen" not in headers_rec
     assert "Fecha movimiento" not in headers_rec
     assert "Importe movimiento" not in headers_rec
@@ -154,6 +156,7 @@ def test_export_dudosos_xlsx_includes_active_and_deleted_rows_by_origin(tmp_path
                 "Nro recibo": "100",
                 "Nro cliente": "10",
                 "Cliente": "Cliente BBVA",
+                "Vendedor/Repartidor": "65 - Yanina Andrade",
                 "Medio de pago": "Transferencia",
                 "Fecha recibo": "2026-04-06",
                 "Importe recibo": 1000.0,
@@ -172,6 +175,7 @@ def test_export_dudosos_xlsx_includes_active_and_deleted_rows_by_origin(tmp_path
                 "Nro recibo": "200",
                 "Nro cliente": "20",
                 "Cliente": "Cliente MP",
+                "Vendedor/Repartidor": "62 - Pascuali Soledad",
                 "Medio de pago": "Mercado Pago",
                 "Fecha recibo": "2026-04-07",
                 "Importe recibo": 2000.0,
@@ -197,7 +201,12 @@ def test_export_dudosos_xlsx_includes_active_and_deleted_rows_by_origin(tmp_path
     assert "Estado dudoso" not in bbva_headers
     assert "Ranking" not in mp_headers
     assert "Ranking" not in bbva_headers
-    assert "Divisor" in mp_headers
-    assert "Divisor" in bbva_headers
+    assert "Divisor" not in mp_headers
+    assert "Divisor" not in bbva_headers
+    assert "Vendedor/Repartidor" in mp_headers
+    assert "Vendedor/Repartidor" in bbva_headers
+    origen_col = bbva_headers.index("Origen") + 1
+    assert ws_bbva.cell(1, origen_col).border.left.style == "medium"
+    assert ws_bbva.cell(2, origen_col).border.left.style == "medium"
     assert ws_mp.row_dimensions[1].height == 24
     assert ws_mp.row_dimensions[2].height == 20

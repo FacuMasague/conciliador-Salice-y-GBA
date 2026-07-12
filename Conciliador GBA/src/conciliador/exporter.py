@@ -146,6 +146,46 @@ def _safe_sheet_name(name: str) -> str:
     return cleaned[:31] or 'Sheet'
 
 
+def _style_receipt_bank_sections(ws, cols: List[str], rows_count: int) -> None:
+    """Separa visualmente datos del recibo y del ingreso sin columna artificial."""
+    if not cols:
+        return
+    receipt_headers = {
+        "Empresa", "Nro recibo", "Nro cliente", "Cliente", "Vendedor/Repartidor",
+        "Medio de pago", "Fecha recibo", "Importe recibo", "CUIT recibo",
+    }
+    bank_headers = {
+        "Origen", "Fecha movimiento", "Importe movimiento", "Detalle movimiento",
+        "Fila Excel", "CUIT ingreso",
+    }
+    receipt_fill = openpyxl.styles.PatternFill("solid", fgColor="DCEAF7")
+    bank_fill = openpyxl.styles.PatternFill("solid", fgColor="E2F0E8")
+    separator = openpyxl.styles.Side(style="medium", color="5B6B7A")
+    for col_idx, name in enumerate(cols, start=1):
+        header = ws.cell(1, col_idx)
+        if name in receipt_headers:
+            header.fill = receipt_fill
+        elif name in bank_headers:
+            header.fill = bank_fill
+        if name == "Origen":
+            for row_idx in range(1, rows_count + 2):
+                cell = ws.cell(row_idx, col_idx)
+                cell.border = copy.copy(cell.border)
+                cell.border = openpyxl.styles.Border(
+                    left=separator,
+                    right=cell.border.right,
+                    top=cell.border.top,
+                    bottom=cell.border.bottom,
+                    diagonal=cell.border.diagonal,
+                    diagonal_direction=cell.border.diagonal_direction,
+                    diagonalUp=cell.border.diagonalUp,
+                    diagonalDown=cell.border.diagonalDown,
+                    outline=cell.border.outline,
+                    vertical=cell.border.vertical,
+                    horizontal=cell.border.horizontal,
+                )
+
+
 def export_xlsx(result: Dict[str, List[dict]], out_path: str) -> str:
     """Write an .xlsx with 3 sheets: Validados, Dudosos, No encontrados."""
     wb = openpyxl.Workbook()
@@ -166,6 +206,8 @@ def export_xlsx(result: Dict[str, List[dict]], out_path: str) -> str:
                 for k in r.keys():
                     if str(k).startswith("__"):
                         continue
+                    if k == "Divisor":
+                        continue
                     if k not in seen:
                         seen.add(k)
                         extras.append(k)
@@ -175,6 +217,8 @@ def export_xlsx(result: Dict[str, List[dict]], out_path: str) -> str:
             seen = set()
             for r in rows:
                 for k in r.keys():
+                    if k == "Divisor":
+                        continue
                     if k not in seen:
                         seen.add(k)
                         cols.append(k)
@@ -199,6 +243,7 @@ def export_xlsx(result: Dict[str, List[dict]], out_path: str) -> str:
                     # only format numeric cells
                     if isinstance(cell.value, (int, float)):
                         cell.number_format = AR_NUMBER_FORMAT
+        _style_receipt_bank_sections(ws, cols, len(rows))
 
     # V2.0:
     # - Validados: sin columna Motivo
@@ -209,10 +254,10 @@ def export_xlsx(result: Dict[str, List[dict]], out_path: str) -> str:
         'Nro recibo',
         'Nro cliente',
         'Cliente',
+        'Vendedor/Repartidor',
         'Medio de pago',
         'Fecha recibo',
         'Importe recibo',
-        'Divisor',
         'Origen',
         'Fecha movimiento',
         'Importe movimiento',
@@ -228,11 +273,11 @@ def export_xlsx(result: Dict[str, List[dict]], out_path: str) -> str:
         'Nro recibo',
         'Nro cliente',
         'Cliente',
+        'Vendedor/Repartidor',
         'Medio de pago',
         'Fecha recibo',
         'Importe recibo',
         'Peso',
-        'Divisor',
         'Origen',
         'Fecha movimiento',
         'Importe movimiento',
@@ -302,7 +347,7 @@ def export_no_encontrados_xlsx(result: Dict[str, List[dict]], out_path: str) -> 
     def _coerce_money(v: object) -> object:
         """Try to convert money-like strings into numbers for stable Excel rendering."""
         if v is None or isinstance(v, (int, float)):
-            return v
+            return round(float(v), 2) if isinstance(v, (int, float)) else v
         if not isinstance(v, str):
             return v
         s = v.strip()
@@ -347,7 +392,7 @@ def export_no_encontrados_xlsx(result: Dict[str, List[dict]], out_path: str) -> 
             "Importe movimiento": 18,
             "Importe recibo": 18,
             "Detalle movimiento": 48,
-            "Divisor": 18,
+            "Vendedor/Repartidor": 34,
             "Fila Excel": 12,
             "Nro recibo": 12,
             "Nro cliente": 12,
@@ -400,6 +445,8 @@ def export_no_encontrados_xlsx(result: Dict[str, List[dict]], out_path: str) -> 
             for k in r.keys():
                 if str(k).startswith("__"):
                     continue
+                if k == "Divisor":
+                    continue
                 if k in seen:
                     continue
                 if any(_non_empty(x.get(k)) for x in sheet_rows):
@@ -445,10 +492,10 @@ def export_no_encontrados_xlsx(result: Dict[str, List[dict]], out_path: str) -> 
         "Nro recibo",
         "Nro cliente",
         "Cliente",
+        "Vendedor/Repartidor",
         "Medio de pago",
         "Fecha recibo",
         "Importe recibo",
-        "Divisor",
         "CUIT recibo",
         "Peso",
     ]
@@ -529,7 +576,7 @@ def export_dudosos_xlsx(result: Dict[str, List[dict]], out_path: str) -> str:
 
     def _coerce_money(v: object) -> object:
         if v is None or isinstance(v, (int, float)):
-            return v
+            return round(float(v), 2) if isinstance(v, (int, float)) else v
         if not isinstance(v, str):
             return v
         s = v.strip().replace("$", "").replace(" ", "")
@@ -549,10 +596,10 @@ def export_dudosos_xlsx(result: Dict[str, List[dict]], out_path: str) -> str:
         "Nro recibo",
         "Nro cliente",
         "Cliente",
+        "Vendedor/Repartidor",
         "Medio de pago",
         "Fecha recibo",
         "Importe recibo",
-        "Divisor",
         "Origen",
         "Fecha movimiento",
         "Importe movimiento",
@@ -590,8 +637,8 @@ def export_dudosos_xlsx(result: Dict[str, List[dict]], out_path: str) -> str:
         if not sheet_rows:
             ws.append(["(sin filas)"])
             return
-        force_cols = {"Divisor"}
-        hidden_cols = {"Estado dudoso", "Ranking"}
+        force_cols: set[str] = set()
+        hidden_cols = {"Estado dudoso", "Ranking", "Divisor"}
         cols = [c for c in preferred_cols if c in force_cols or any(_non_empty(r.get(c)) for r in sheet_rows)]
         seen = set(cols)
         for row in sheet_rows:
@@ -617,10 +664,10 @@ def export_dudosos_xlsx(result: Dict[str, List[dict]], out_path: str) -> str:
             "Nro recibo": 12,
             "Nro cliente": 13,
             "Cliente": 34,
+            "Vendedor/Repartidor": 34,
             "Medio de pago": 18,
             "Fecha recibo": 14,
             "Importe recibo": 18,
-            "Divisor": 18,
             "Origen": 14,
             "Fecha movimiento": 16,
             "Importe movimiento": 18,
@@ -640,6 +687,7 @@ def export_dudosos_xlsx(result: Dict[str, List[dict]], out_path: str) -> str:
                     ws.cell(row_idx, col_idx).number_format = AR_NUMBER_FORMAT_TRIM
             ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = min(width, 60)
         _style_sheet(ws, len(sheet_rows), len(cols))
+        _style_receipt_bank_sections(ws, cols, len(sheet_rows))
 
     _add_sheet("Dudosos Mercado Pago", buckets["Mercado Pago"])
     _add_sheet("Dudosos BBVA", buckets["BBVA"])
@@ -695,6 +743,17 @@ def export_filled_generic_excel(
                 cell.border = copy.copy(src.border)
                 cell.alignment = copy.copy(src.alignment)
                 cell.number_format = src.number_format
+        widths = {
+            "ok": 8,
+            "cliente": 12,
+            "cliente nombre": 30,
+            "recibo": 12,
+            "fecha recibo": 14,
+            "medio de pago": 20,
+            "importe recibo": 16,
+            "vendedor/fletero": 32,
+        }
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = widths.get(label, 16)
         return col
 
     def _normalize_mp_operation_ids(ws) -> None:
@@ -732,6 +791,7 @@ def export_filled_generic_excel(
             "fecha_recibo": _find_col(ws, header_row, ["fecha recibo", "fecha_recibo"]),
             "medio_pago": _find_col(ws, header_row, ["medio de pago", "medio_pago"]),
             "importe_recibo": _find_col(ws, header_row, ["importe recibo", "importe_recibo"]),
+            "vendedor_fletero": _find_col(ws, header_row, ["vendedor/fletero", "vendedor repartidor", "vendedor/repartidor", "fletero", "vendedor"]),
         }
         if cols["ok"] is None:
             cols["ok"] = _append_header_col(ws, header_row, "ok")
@@ -747,6 +807,22 @@ def export_filled_generic_excel(
             cols["medio_pago"] = _append_header_col(ws, header_row, "medio de pago")
         if cols["importe_recibo"] is None:
             cols["importe_recibo"] = _append_header_col(ws, header_row, "importe recibo")
+        if cols["vendedor_fletero"] is None:
+            cols["vendedor_fletero"] = _append_header_col(ws, header_row, "vendedor/fletero")
+        widths_by_key = {
+            "ok": 8,
+            "cliente": 12,
+            "cliente_nombre": 30,
+            "recibo": 12,
+            "fecha_recibo": 14,
+            "medio_pago": 20,
+            "importe_recibo": 16,
+            "vendedor_fletero": 32,
+        }
+        for key, width in widths_by_key.items():
+            col_idx = cols.get(key)
+            if col_idx is not None:
+                ws.column_dimensions[openpyxl.utils.get_column_letter(int(col_idx))].width = width
         return {k: int(v) for k, v in cols.items() if v is not None}
 
     def _pick_sheet(row: dict) -> str | None:
@@ -823,6 +899,7 @@ def export_filled_generic_excel(
         ws.cell(fila_excel, cols["recibo"], str(row.get("Nro recibo") or "").strip())
         ws.cell(fila_excel, cols["fecha_recibo"], _coerce_export_date(row.get("Fecha recibo")))
         ws.cell(fila_excel, cols["medio_pago"], str(row.get("Medio de pago") or "").strip())
+        ws.cell(fila_excel, cols["vendedor_fletero"], str(row.get("Vendedor/Repartidor") or "").strip())
         importe_cell = ws.cell(fila_excel, cols["importe_recibo"], row.get("Importe recibo"))
         if isinstance(importe_cell.value, (int, float)):
             importe_cell.number_format = AR_NUMBER_FORMAT_TRIM
