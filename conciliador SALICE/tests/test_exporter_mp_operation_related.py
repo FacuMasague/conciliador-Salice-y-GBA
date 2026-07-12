@@ -55,6 +55,7 @@ def test_export_mp_operacion_relacionada_is_text_not_scientific(tmp_path):
                 "Fila Excel": 2,
                 "Nro cliente": "123",
                 "Nro recibo": "456",
+                "Vendedor": "206 - Andres Dominguez",
                 "Detalle movimiento": "143820000000",
                 "Ranking": 1,
             }
@@ -67,10 +68,46 @@ def test_export_mp_operacion_relacionada_is_text_not_scientific(tmp_path):
 
     op_cell = ws.cell(2, 4)
     cuit_cell = ws.cell(2, 9)
+    headers = [cell.value for cell in ws[1]]
+    vendedor_col = headers.index("vendedor/fletero") + 1
     assert op_cell.data_type == "s"
     assert "E+" not in str(op_cell.value or "").upper()
     assert str(op_cell.value) == "143820000000"
     assert (cuit_cell.value or "") == ""
+    assert ws.cell(2, vendedor_col).value == "206 - Andres Dominguez"
+
+
+def test_export_vendor_does_not_reuse_unnamed_column_with_historical_data(tmp_path):
+    original = tmp_path / "original_galicia.xlsx"
+    out = tmp_path / "out_galicia.xlsx"
+    _build_workbook(str(original))
+
+    wb = openpyxl.load_workbook(str(original))
+    ws = wb["SALICE GALICIA (ALARCON)"]
+    ws.cell(2, 9, "dato histórico")
+    wb.save(str(original))
+
+    result = {
+        "validados": [
+            {
+                "Origen": "GALICIA",
+                "Fila Excel": 2,
+                "Nro cliente": "123",
+                "Nro recibo": "456",
+                "Vendedor": "203 - Edgardo Larrea",
+                "Ranking": 1,
+            }
+        ]
+    }
+    export_filled_bank_excel(str(original), result, str(out))
+
+    wb2 = openpyxl.load_workbook(str(out), data_only=False)
+    ws2 = wb2["SALICE GALICIA (ALARCON)"]
+    assert ws2.cell(2, 9).value == "dato histórico"
+    headers = [ws2.cell(1, c).value for c in range(1, ws2.max_column + 1)]
+    vendedor_col = headers.index("vendedor/fletero") + 1
+    assert vendedor_col != 9
+    assert ws2.cell(2, vendedor_col).value == "203 - Edgardo Larrea"
 
 
 def test_export_dudosos_compacts_and_keeps_only_dudoso_rows(tmp_path):

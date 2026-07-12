@@ -25,7 +25,7 @@ from src.conciliador.external.errors import ExternalConfigError, ExternalProvide
 
 
 # Versión visible en UI y en /docs
-APP_VERSION = "5.1.6"
+APP_VERSION = "5.2.0"
 app = FastAPI(title="Conciliador de Recibos e Ingresos", version=APP_VERSION)
 
 # Para desarrollo web (frontend local) sin fricción.
@@ -312,7 +312,7 @@ async def export(
     pdf_alarcon: UploadFile | None = File(None, description="PDF de recibos Alarcón (opcional)"),
     force_validations: str | None = Form(None, description="JSON para promover Dudosos a Validados (opcional)"),
     drop_dudosos: str | None = Form(None, description="Lista JSON para quitar casos de Dudosos (opcional)"),
-    format: str = Query("xlsx", pattern="^(xlsx|noencontradosxlsx|devxlsx|zipcsv)$"),
+    format: str = Query("xlsx", pattern="^(xlsx|dudososxlsx|noencontradosxlsx|devxlsx|zipcsv)$"),
     margin_days: int = Query(5, ge=0, le=31),
     tolerance_days_suspect: int = Query(7, ge=0, le=31),
     # V3.5: multiplicador de días separado por signo.
@@ -341,6 +341,7 @@ async def export(
 
     format:
       - xlsx       -> Excel de ingresos original, completado con VALIDADOS (permite sobrescribir)
+      - dudososxlsx -> Excel de ingresos original, completado solamente con DUDOSOS principales
       - noencontradosxlsx -> Excel con 4 hojas de no encontrados (BBVA, Mercado Pago, Galicia, Recibos sin banco)
       - devxlsx -> Excel técnico con hojas (Validados/Dudosos/No encontrados/Meta)
       - zipcsv  -> (legacy) zip con CSV
@@ -444,6 +445,26 @@ async def export(
             out_path = os.path.join(tmp_dir, f"{rid}_ingresos_conciliados.xlsx")
             export_filled_bank_excel(working_excel_path, result, out_path, default_empresa=default_empresa)
             dl_name = _download_name_from_excel_filename(base_excel_filename, "conciliado")
+            return FileResponse(
+                out_path,
+                filename=dl_name,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+        if format == "dudososxlsx":
+            out_path = os.path.join(tmp_dir, f"{rid}_ingresos_dudosos.xlsx")
+            export_filled_bank_excel(
+                working_excel_path,
+                result,
+                out_path,
+                row_source="dudosos",
+                only_ranking_1=True,
+                write_cliente_nombre_col=True,
+                clear_existing_assignments=True,
+                write_ok_marker=False,
+                compact_only_source_rows=True,
+            )
+            dl_name = _download_name_from_excel_filename(base_excel_filename, "dudosos")
             return FileResponse(
                 out_path,
                 filename=dl_name,

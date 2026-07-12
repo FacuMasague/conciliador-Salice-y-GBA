@@ -29,7 +29,6 @@ class ReceiptPayment:
 
 _RE_HEADER_WITH_DATE = re.compile(r"^(?P<recibo>\d+)\s+(?P<cliente>\d+)\s+-\s+(?P<nombre>.+?)\s+\d{2}/\d{2}/\d{4}\b")
 _RE_HEADER = re.compile(r"^(?P<recibo>\d+)\s+(?P<cliente>\d+)\s+-\s+(?P<nombre>.*)$")
-_RE_VENDOR = re.compile(r"^\[(?P<codigo>\d+)\s*-\s*(?P<nombre>[^\]]+)\](?:.*)?$")
 _RE_PAY_LINE = re.compile(
     r"^(?P<prefix>Transferencia(?:\s+Bancar)?|Mercado\s+Pago).*?\|\s*(?P<fecha>\d{4}-\d{2}-\d{2})\s*\|\s*(?P<importe>-?\d+(?:\.\d+)?)\s*$",
     re.IGNORECASE,
@@ -122,20 +121,6 @@ def parse_receipts_and_payments_from_text(text: str, *, empresa_override: str | 
                 vendedor=None,
             )
             receipts.append(current)
-            continue
-
-        vm = _RE_VENDOR.match(line)
-        if vm and current:
-            vend = f"{vm.group('codigo').strip()} - {vm.group('nombre').strip()}"
-            current = Receipt(
-                empresa=current.empresa,
-                nro_recibo=current.nro_recibo,
-                nro_cliente=current.nro_cliente,
-                cliente_nombre=current.cliente_nombre,
-                vendedor=vend,
-            )
-            if receipts:
-                receipts[-1] = current
             continue
 
         pm = _RE_PAY_LINE.match(line)

@@ -415,7 +415,7 @@ def export_filled_bank_excel(
     """Devuelve el MISMO Excel de ingresos subido por el usuario, pero completado con VALIDADOS.
 
     Reglas:
-      - Completa/sobrescribe columnas (ok/cliente/recibo) para cada validado (Ranking=1).
+      - Completa/sobrescribe columnas (ok/cliente/recibo/vendedor-fletero) para cada validado (Ranking=1).
       - Cliente y Recibo se escriben como NÚMERO cuando sea posible (formato General).
       - Se intenta mantener el libro idéntico al original (gráficos, hojas, formatos).
         Para eso, NO re-guardamos el workbook completo con openpyxl (puede romper libros complejos).
@@ -643,13 +643,14 @@ def export_filled_bank_excel(
         if not p:
             return r
         out = dict(r)
-        for k in ("Nro recibo", "Nro cliente", "Cliente", "Medio de pago", "Fecha recibo", "Importe recibo"):
+        for k in ("Nro recibo", "Nro cliente", "Cliente", "Vendedor", "Medio de pago", "Fecha recibo", "Importe recibo"):
             v = out.get(k, None)
             if v is None or str(v).strip() == "":
                 out[k] = p.get(k, "")
         return out
 
     cliente_nombre_col_by_sheet: dict[str, int] = {}
+    vendedor_col_by_sheet: dict[str, int] = {}
     selected_rows_by_sheet: dict[str, set[int]] = {}
 
     def _get_cliente_nombre_col(sheet: str, header_row: int, rec_col: int) -> int | None:
@@ -685,6 +686,44 @@ def export_filled_bank_excel(
                 return c
         return None
 
+    def _get_vendedor_col(sheet: str, header_row: int, rec_col: int) -> int:
+        if sheet in vendedor_col_by_sheet:
+            return vendedor_col_by_sheet[sheet]
+        ws_hdr = wb[sheet]
+        max_scan_cols = min(120, ws_hdr.max_column or 120)
+        aliases = {"vendedor/fletero", "vendedor fletero", "vendedor/repartidor", "vendedor", "fletero"}
+        for c in range(1, max_scan_cols + 1):
+            if _norm(ws_hdr.cell(header_row, c).value) in aliases:
+                vendedor_col_by_sheet[sheet] = c
+                return c
+
+        reserved_cliente_col = cliente_nombre_col_by_sheet.get(sheet)
+        start = rec_col + 1
+        # Una cabecera vacía no garantiza que la columna esté libre: algunos
+        # records guardan datos históricos en columnas sin título. Solo reutilizamos
+        # una columna si todas sus celdas están realmente vacías.
+        for c in range(start, max_scan_cols + 1):
+            if c == reserved_cliente_col:
+                continue
+            if _norm(ws_hdr.cell(header_row, c).value) != "":
+                continue
+            column_is_empty = all(
+                ws_hdr.cell(r, c).value in (None, "")
+                for r in range(1, (ws_hdr.max_row or header_row) + 1)
+            )
+            if column_is_empty:
+                vendedor_col_by_sheet[sheet] = c
+                writes.setdefault(sheet, []).append(
+                    (header_row, c, "vendedor/fletero", "inlineStr")
+                )
+                return c
+        c = max(int(ws_hdr.max_column or 0), rec_col, int(reserved_cliente_col or 0)) + 1
+        vendedor_col_by_sheet[sheet] = c
+        writes.setdefault(sheet, []).append(
+            (header_row, c, "vendedor/fletero", "inlineStr")
+        )
+        return c
+
     if clear_existing_assignments:
         candidate_sheets = [s for s in (bbva_sheets + galicia_sheets + mp_sheets) if s in wb.sheetnames]
         for sheet in candidate_sheets:
@@ -695,12 +734,14 @@ def export_filled_bank_excel(
             ws = wb[sheet]
             max_r = ws.max_row or header_row
             cliente_col = _get_cliente_nombre_col(sheet, header_row, rec_col)
+            vendedor_col = _get_vendedor_col(sheet, header_row, rec_col)
             for rr in range(header_row + 1, max_r + 1):
                 writes.setdefault(sheet, []).append((rr, ok_col, "", "inlineStr"))
                 writes[sheet].append((rr, cli_col, "", "inlineStr"))
                 writes[sheet].append((rr, rec_col, "", "inlineStr"))
                 if cliente_col is not None:
                     writes[sheet].append((rr, cliente_col, "", "inlineStr"))
+                writes[sheet].append((rr, vendedor_col, "", "inlineStr"))
 
     for raw in source_rows:
         r = _effective_row(raw)
@@ -733,6 +774,7 @@ def export_filled_bank_excel(
             selected_rows_by_sheet.setdefault(sheet, set()).add(int(fila_excel))
 
         cliente_nombre_col = _get_cliente_nombre_col(sheet, header_row, rec_col)
+        vendedor_col = _get_vendedor_col(sheet, header_row, rec_col)
         ws_hdr = wb[sheet]
         if sheet not in mp_oper_col_by_sheet:
             mp_oper_col_by_sheet[sheet] = _find_col_in_header(ws_hdr, header_row, MP_OPER_KEYS)
@@ -767,6 +809,9 @@ def export_filled_bank_excel(
                 writes[sheet].append((fila_excel, rec_col, str(r.get("Nro recibo") or "").strip(), "inlineStr"))
         if write_cliente_nombre_col and cliente_nombre_col is not None:
             writes[sheet].append((fila_excel, cliente_nombre_col, str(r.get("Cliente") or "").strip(), "inlineStr"))
+        writes[sheet].append(
+            (fila_excel, vendedor_col, str(r.get("Vendedor") or "").strip(), "inlineStr")
+        )
 
     if compact_only_source_rows:
         candidate_sheets = [s for s in (bbva_sheets + galicia_sheets + mp_sheets) if s in wb.sheetnames]

@@ -35,17 +35,11 @@ def test_parse_receipts_and_payments_basic(pdf_salice_path):
     assert re.match(r"\d{4}-\d{2}-\d{2}", dmax)
 
 
-def test_parse_receipts_reads_vendedor_with_codigo(pdf_salice_path):
+def test_parse_receipts_does_not_use_legacy_pdf_vendor(pdf_salice_path):
     receipts, payments = parse_receipts_and_payments(pdf_salice_path)
     assert receipts
-    with_vendor = [r for r in receipts if (r.vendedor or "").strip()]
-    assert with_vendor, "No se detectó vendedor en los recibos."
-    assert re.match(r"^\d+\s*-\s*.+$", with_vendor[0].vendedor or "")
-
-    # El vendedor también debe estar disponible en los pagos del mismo recibo.
-    p = next((x for x in payments if x.nro_recibo == with_vendor[0].nro_recibo), None)
-    assert p is not None
-    assert (p.vendedor or "").strip() == (with_vendor[0].vendedor or "").strip()
+    assert all(not r.vendedor for r in receipts)
+    assert all(not p.vendedor for p in payments)
 
 
 def test_parse_receipts_cliente_nombre_does_not_include_fecha(pdf_alarcon_path):

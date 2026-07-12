@@ -63,5 +63,8 @@ Endpoint principal:
   - Se pueden subir archivos crudos de bancos (`BBVA`, `GALICIA`, `MERCADOPAGO`) y el sistema detecta automáticamente el tipo por formato.
   - El backend fusiona los crudos en el Excel consolidado (record) antes de conciliar.
   - El export de `Descargar validados` devuelve el record consolidado actualizado con los ingresos nuevos + conciliación.
+- V5.2.0:
+  - Vendedor/fletero se resuelve desde los recibos y maestros oficiales de GESI, sin Pedidos Móviles.
+  - La UI incorpora ordenamiento desde los encabezados, divisor visual banco/recibo y acciones de revisión alineadas con GBA.
 
 Si en algún entorno cambiás rutas o nombres de archivos, ajustá `tests/conftest.py`.

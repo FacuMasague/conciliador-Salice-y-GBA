@@ -13,6 +13,18 @@ class _Resp:
         self.warnings = warnings or []
 
 
+@pytest.fixture(autouse=True)
+def _mock_optional_masters(monkeypatch):
+    monkeypatch.setattr(
+        "src.conciliador.external.service.fetch_padron_payload",
+        lambda empresa_filter=None, cliente_ids=None: _Resp({"clientes": []}),
+    )
+    monkeypatch.setattr(
+        "src.conciliador.external.service.fetch_repartidores_payload",
+        lambda empresa_filter=None: _Resp({"repartidores": []}),
+    )
+
+
 def test_fetch_receipts_and_payments_maps_nested_receipts(monkeypatch):
     payload = {
         "receipts": [
@@ -269,7 +281,7 @@ def test_fetch_receipts_and_payments_gesi_maps_empresa_from_empresas_master(monk
     assert payments[0].empresa == "ALARCON"
 
 
-def test_fetch_receipts_and_payments_gesi_prefers_vendor_name_when_available(monkeypatch):
+def test_fetch_receipts_and_payments_gesi_resolves_repartidor_from_official_master(monkeypatch):
     payload = {
         "comprobantes": [
             {
@@ -280,7 +292,8 @@ def test_fetch_receipts_and_payments_gesi_prefers_vendor_name_when_available(mon
                 "clienteID": 33119,
                 "razonSocial": "Cliente",
                 "vendedorID": 211,
-                "nombreVendedor": "Matias Carricart",
+                "nombreVendedor": "Dato anterior que debe ignorarse",
+                "repartidorID": 0,
                 "formaDePagoID": 5,
                 "fechaDeEmision": "2026-02-18",
                 "importeTotal": 1234.0,
@@ -296,13 +309,26 @@ def test_fetch_receipts_and_payments_gesi_prefers_vendor_name_when_available(mon
         "src.conciliador.external.service.fetch_receipts_payload",
         lambda days, empresa_filter=None: _Resp(payload, request_id="r-gesi-vendor"),
     )
+    monkeypatch.setattr(
+        "src.conciliador.external.service.fetch_padron_payload",
+        lambda empresa_filter=None, cliente_ids=None: _Resp(
+            {"clientes": [{"clienteID": 33119, "repartidorID": 65}]}
+        ),
+    )
+    monkeypatch.setattr(
+        "src.conciliador.external.service.fetch_repartidores_payload",
+        lambda empresa_filter=None: _Resp(
+            {"repartidores": [{"repartidorID": 65, "razonSocial": "Yanina Andrade"}]},
+            request_id="r-repartidores",
+        ),
+    )
 
     payments, _meta = fetch_receipts_and_payments(60, None)
     assert len(payments) == 1
-    assert payments[0].vendedor == "211 - Matias Carricart"
+    assert payments[0].vendedor == "65 - Yanina Andrade"
 
 
-def test_fetch_receipts_and_payments_gesi_reads_vendor_from_datos_clientes(monkeypatch):
+def test_fetch_receipts_and_payments_gesi_does_not_use_legacy_vendor_fields(monkeypatch):
     payload = {
         "comprobantes": [
             {
@@ -333,10 +359,10 @@ def test_fetch_receipts_and_payments_gesi_reads_vendor_from_datos_clientes(monke
 
     payments, _meta = fetch_receipts_and_payments(60, None)
     assert len(payments) == 1
-    assert payments[0].vendedor == "345"
+    assert not payments[0].vendedor
 
 
-def test_fetch_receipts_and_payments_gesi_reads_nested_vendor_name_variants(monkeypatch):
+def test_fetch_receipts_and_payments_gesi_keeps_unknown_repartidor_code(monkeypatch):
     payload = {
         "comprobantes": [
             {
@@ -349,12 +375,7 @@ def test_fetch_receipts_and_payments_gesi_reads_nested_vendor_name_variants(monk
                 "formaDePagoID": 5,
                 "fechaDeEmision": "2026-02-18",
                 "importeTotal": 1234.0,
-                "extra": {
-                    "datosVendedor": {
-                        "vendedorID": 211,
-                        "descripcionVendedor": "Matias Carricart",
-                    }
-                },
+                "repartidorID": 999,
             }
         ],
         "formasDePago": [
@@ -367,10 +388,14 @@ def test_fetch_receipts_and_payments_gesi_reads_nested_vendor_name_variants(monk
         "src.conciliador.external.service.fetch_receipts_payload",
         lambda days, empresa_filter=None: _Resp(payload, request_id="r-gesi-nested-vendor"),
     )
+    monkeypatch.setattr(
+        "src.conciliador.external.service.fetch_repartidores_payload",
+        lambda empresa_filter=None: _Resp({"repartidores": []}),
+    )
 
     payments, _meta = fetch_receipts_and_payments(60, None)
     assert len(payments) == 1
-    assert payments[0].vendedor == "211 - Matias Carricart"
+    assert payments[0].vendedor == "999"
 
 
 def test_fetch_receipts_and_payments_gesi_reads_medio_from_canal(monkeypatch):

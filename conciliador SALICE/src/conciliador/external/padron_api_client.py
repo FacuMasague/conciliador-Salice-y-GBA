@@ -4,6 +4,7 @@ import json
 import os
 import socket
 import ssl
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 from urllib.error import HTTPError, URLError
@@ -15,6 +16,20 @@ from .errors import ExternalConfigError, ExternalProviderError, ExternalTimeoutE
 
 @dataclass(frozen=True)
 class PadronApiResponse:
+    payload: Dict[str, Any]
+    request_id: str | None
+    warnings: list[str]
+
+
+@dataclass(frozen=True)
+class RepartidoresApiResponse:
+    payload: Dict[str, Any]
+    request_id: str | None
+    warnings: list[str]
+
+
+@dataclass(frozen=True)
+class VendedoresApiResponse:
     payload: Dict[str, Any]
     request_id: str | None
     warnings: list[str]
@@ -36,6 +51,27 @@ def _timeout_seconds() -> float:
         return v
     except Exception:
         raise ExternalConfigError("HTTP_TIMEOUT_SECONDS inválido")
+
+
+def _normalize_cliente_id(value: object) -> str:
+    digits = "".join(ch for ch in str(value or "").strip() if ch.isdigit())
+    if not digits:
+        return ""
+    try:
+        return str(int(digits))
+    except Exception:
+        return digits.lstrip("0") or "0"
+
+
+def _getitem_concurrency() -> int:
+    raw = (os.getenv("PADRON_API_GETITEM_CONCURRENCY", "8") or "8").strip()
+    try:
+        value = int(raw)
+    except Exception:
+        raise ExternalConfigError("PADRON_API_GETITEM_CONCURRENCY inválido")
+    if value <= 0:
+        raise ExternalConfigError("PADRON_API_GETITEM_CONCURRENCY inválido")
+    return value
 
 
 def _ssl_context() -> ssl.SSLContext:
@@ -223,7 +259,73 @@ def _get_clientes_getlist(*, base: str, path: str, headers: dict[str, str], empr
     return all_rows, request_id_last, warnings
 
 
-def fetch_padron_payload(*, empresa_filter: str | None = None) -> PadronApiResponse:
+def _fetch_cliente_getitem(
+    *, base: str, path: str, headers: dict[str, str], cliente_id: str
+) -> tuple[dict | None, str | None]:
+    query = {
+        "clienteID": cliente_id,
+        "sucursales": "N",
+        "preciosespeciales": "N",
+        "contactos": "N",
+        "unidadesdecliente": "N",
+    }
+    payload, request_id = _http_json(
+        f"{base}{path}?{urlencode(query)}", method="GET", headers=headers
+    )
+    if payload.get("success") is False:
+        err = payload.get("error")
+        message = "Clientes/GetItem devolvió error"
+        if isinstance(err, dict):
+            message = str(err.get("message") or message)
+        raise ExternalProviderError("padron", message)
+    row = payload.get("cliente")
+    if row is None:
+        return None, request_id
+    if not isinstance(row, dict):
+        raise ExternalProviderError("padron", "Clientes/GetItem no devolvió 'cliente' objeto")
+    return row, request_id
+
+
+def _get_clientes_targeted(
+    *, base: str, path: str, headers: dict[str, str], cliente_ids: list[str]
+) -> Tuple[List[dict], str | None, list[str]]:
+    unique_ids = list(
+        dict.fromkeys(cid for raw in cliente_ids if (cid := _normalize_cliente_id(raw)))
+    )
+    if not unique_ids:
+        return [], None, []
+
+    rows: list[dict] = []
+    warnings: list[str] = []
+    request_id_last: str | None = None
+    concurrency = min(_getitem_concurrency(), len(unique_ids))
+    with ThreadPoolExecutor(max_workers=max(concurrency, 1)) as executor:
+        futures = {
+            executor.submit(
+                _fetch_cliente_getitem,
+                base=base,
+                path=path,
+                headers=dict(headers),
+                cliente_id=cliente_id,
+            ): cliente_id
+            for cliente_id in unique_ids
+        }
+        for future in as_completed(futures):
+            cliente_id = futures[future]
+            try:
+                row, request_id = future.result()
+                request_id_last = request_id or request_id_last
+                if row is not None:
+                    rows.append(row)
+            except (ExternalProviderError, ExternalTimeoutError) as exc:
+                warnings.append(f"Clientes/GetItem clienteID={cliente_id}: {exc}")
+
+    return rows, request_id_last, warnings
+
+
+def fetch_padron_payload(
+    *, empresa_filter: str | None = None, cliente_ids: list[str] | None = None
+) -> PadronApiResponse:
     if not _env_bool("API_MODE_ENABLED", True):
         raise ExternalConfigError("API_MODE_ENABLED=false: modo API deshabilitado")
 
@@ -236,11 +338,134 @@ def fetch_padron_payload(*, empresa_filter: str | None = None) -> PadronApiRespo
     if not clientes_path.startswith("/"):
         clientes_path = "/" + clientes_path
 
-    rows, rid, warnings = _get_clientes_getlist(
-        base=base,
-        path=clientes_path,
-        headers=headers,
-        empresa_filter=empresa_filter,
-    )
+    target_ids = [value for value in (cliente_ids or []) if _normalize_cliente_id(value)]
+    if target_ids:
+        getitem_path = (
+            os.getenv("PADRON_API_CLIENTES_GETITEM_PATH", "/api/Maestros/Clientes/GetItem")
+            or "/api/Maestros/Clientes/GetItem"
+        ).strip()
+        if not getitem_path.startswith("/"):
+            getitem_path = "/" + getitem_path
+        rows, rid, warnings = _get_clientes_targeted(
+            base=base,
+            path=getitem_path,
+            headers=headers,
+            cliente_ids=target_ids,
+        )
+    else:
+        rows, rid, warnings = _get_clientes_getlist(
+            base=base,
+            path=clientes_path,
+            headers=headers,
+            empresa_filter=empresa_filter,
+        )
 
     return PadronApiResponse(payload={"clientes": rows}, request_id=rid, warnings=warnings)
+
+
+def fetch_repartidores_payload(*, empresa_filter: str | None = None) -> RepartidoresApiResponse:
+    """Obtiene el maestro oficial de repartidores de GESI."""
+    if not _env_bool("API_MODE_ENABLED", True):
+        raise ExternalConfigError("API_MODE_ENABLED=false: modo API deshabilitado")
+
+    base = _base_url("PADRON_API")
+    headers = _headers_base("PADRON_API")
+    token = _login_token("PADRON_API", base, headers)
+    headers = {**headers, "Authorization": f"Bearer {token}"}
+    path = (
+        os.getenv("PADRON_API_REPARTIDORES_PATH", "/api/Maestros/Repartidores/GetList")
+        or "/api/Maestros/Repartidores/GetList"
+    ).strip()
+    if not path.startswith("/"):
+        path = "/" + path
+
+    rows: list[dict] = []
+    warnings: list[str] = []
+    request_id_last: str | None = None
+    page = 1
+    size = int((os.getenv("PADRON_API_PAGE_SIZE", "500") or "500").strip())
+    while True:
+        url = f"{base}{path}?{urlencode({'pageNumber': str(page), 'pageSize': str(size)})}"
+        payload, request_id = _http_json(url, method="GET", headers=headers)
+        request_id_last = request_id or request_id_last
+        if payload.get("success") is False:
+            err = payload.get("error")
+            message = "Repartidores/GetList devolvió error"
+            if isinstance(err, dict):
+                message = str(err.get("message") or message)
+            raise ExternalProviderError("padron", message)
+
+        page_rows = payload.get("repartidores")
+        if not isinstance(page_rows, list):
+            raise ExternalProviderError(
+                "padron", "Repartidores/GetList no devolvió 'repartidores' lista"
+            )
+        rows.extend(row for row in page_rows if isinstance(row, dict))
+
+        pagination = payload.get("paginacion")
+        try:
+            total_pages = int(pagination.get("totalPaginas")) if isinstance(pagination, dict) else page
+        except Exception:
+            total_pages = page
+        if page >= total_pages:
+            break
+        page += 1
+        if page > 1000:
+            warnings.append("Corte de paginación de seguridad en Repartidores/GetList")
+            break
+
+    return RepartidoresApiResponse(
+        payload={"repartidores": rows},
+        request_id=request_id_last,
+        warnings=warnings,
+    )
+
+
+def fetch_vendedores_payload(*, empresa_filter: str | None = None) -> VendedoresApiResponse:
+    """Obtiene el maestro de vendedores usado como asignación comercial del cliente."""
+    if not _env_bool("API_MODE_ENABLED", True):
+        raise ExternalConfigError("API_MODE_ENABLED=false: modo API deshabilitado")
+
+    base = _base_url("PADRON_API")
+    headers = _headers_base("PADRON_API")
+    token = _login_token("PADRON_API", base, headers)
+    headers = {**headers, "Authorization": f"Bearer {token}"}
+    path = (
+        os.getenv("PADRON_API_VENDEDORES_PATH", "/api/Maestros/Vendedores/GetList")
+        or "/api/Maestros/Vendedores/GetList"
+    ).strip()
+    if not path.startswith("/"):
+        path = "/" + path
+
+    rows: list[dict] = []
+    warnings: list[str] = []
+    request_id_last: str | None = None
+    page = 1
+    size = int((os.getenv("PADRON_API_PAGE_SIZE", "500") or "500").strip())
+    while True:
+        url = f"{base}{path}?{urlencode({'pageNumber': str(page), 'pageSize': str(size)})}"
+        payload, request_id = _http_json(url, method="GET", headers=headers)
+        request_id_last = request_id or request_id_last
+        if payload.get("success") is False:
+            raise ExternalProviderError("padron", "Vendedores/GetList devolvió error")
+        page_rows = payload.get("vendedores")
+        if not isinstance(page_rows, list):
+            raise ExternalProviderError(
+                "padron", "Vendedores/GetList no devolvió 'vendedores' lista"
+            )
+        rows.extend(row for row in page_rows if isinstance(row, dict))
+        pagination = payload.get("paginacion")
+        try:
+            total_pages = int(pagination.get("totalPaginas")) if isinstance(pagination, dict) else page
+        except Exception:
+            total_pages = page
+        if page >= total_pages:
+            break
+        page += 1
+        if page > 1000:
+            warnings.append("Corte de paginación de seguridad en Vendedores/GetList")
+            break
+
+    return VendedoresApiResponse(
+        payload={"vendedores": rows}, request_id=request_id_last, warnings=warnings
+    )

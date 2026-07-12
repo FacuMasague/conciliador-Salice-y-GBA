@@ -277,6 +277,7 @@ def compare_excel_pdfs(
     api_count_by_target: Dict[str, int] = {}
     api_fecha_desde: str | None = None
     api_fecha_hasta: str | None = None
+    api_cliente_cuit_map: Dict[str, str] = {}
     rmins: List[str] = []
     rmaxs: List[str] = []
 
@@ -377,6 +378,12 @@ def compare_excel_pdfs(
             api_count_by_target = {str(k): int(v) for k, v in api_meta.get("api_comprobantes_count_by_target").items()}
         api_fecha_desde = str(api_meta.get("api_fecha_desde") or "") or None
         api_fecha_hasta = str(api_meta.get("api_fecha_hasta") or "") or None
+        if isinstance(api_meta.get("cliente_cuit_map"), dict):
+            api_cliente_cuit_map = {
+                str(k): str(v)
+                for k, v in api_meta["cliente_cuit_map"].items()
+                if str(k).strip() and str(v).strip()
+            }
         mem_mark("api_receipts_parsed", {"payments_count": len(payments_all), "window_days": effective_api_days})
 
     payments_filtered_old = 0
@@ -444,12 +451,15 @@ def compare_excel_pdfs(
     cliente_to_cuit_map: Dict[str, str] = {}
     resolved_padron_path: str | None = None
     if source == "api":
-        padron_map, padron_meta = fetch_cliente_cuit_map_api(api_empresa_filter)
-        cliente_to_cuit_map = padron_map
-        rid = str(padron_meta.get("api_request_id") or "").strip()
-        if rid:
-            api_request_ids.append(rid)
-        external_warnings.extend([str(x) for x in (padron_meta.get("external_warnings") or []) if str(x).strip()])
+        if api_cliente_cuit_map:
+            cliente_to_cuit_map = api_cliente_cuit_map
+        else:
+            padron_map, padron_meta = fetch_cliente_cuit_map_api(api_empresa_filter)
+            cliente_to_cuit_map = padron_map
+            rid = str(padron_meta.get("api_request_id") or "").strip()
+            if rid:
+                api_request_ids.append(rid)
+            external_warnings.extend([str(x) for x in (padron_meta.get("external_warnings") or []) if str(x).strip()])
     else:
         resolved_padron_path = (padron_cliente_cuit_path or "").strip() or _discover_padron_path(excel_path)
         if resolved_padron_path:
