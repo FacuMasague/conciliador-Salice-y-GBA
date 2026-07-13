@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import openpyxl
+import pytest
 import zipfile
 import xml.etree.ElementTree as ET
 
@@ -69,12 +70,13 @@ def test_export_mp_operacion_relacionada_is_text_not_scientific(tmp_path):
     op_cell = ws.cell(2, 4)
     cuit_cell = ws.cell(2, 9)
     headers = [cell.value for cell in ws[1]]
-    vendedor_col = headers.index("vendedor/fletero") + 1
+    vendedor_col = headers.index("fletero/cobrador") + 1
     assert op_cell.data_type == "s"
     assert "E+" not in str(op_cell.value or "").upper()
     assert str(op_cell.value) == "143820000000"
     assert (cuit_cell.value or "") == ""
     assert ws.cell(2, vendedor_col).value == "206 - Andres Dominguez"
+    assert (ws.column_dimensions[openpyxl.utils.get_column_letter(vendedor_col)].width or 0) >= 28
 
 
 def test_export_vendor_does_not_reuse_unnamed_column_with_historical_data(tmp_path):
@@ -105,9 +107,46 @@ def test_export_vendor_does_not_reuse_unnamed_column_with_historical_data(tmp_pa
     ws2 = wb2["SALICE GALICIA (ALARCON)"]
     assert ws2.cell(2, 9).value == "dato histórico"
     headers = [ws2.cell(1, c).value for c in range(1, ws2.max_column + 1)]
-    vendedor_col = headers.index("vendedor/fletero") + 1
+    vendedor_col = headers.index("fletero/cobrador") + 1
     assert vendedor_col != 9
     assert ws2.cell(2, vendedor_col).value == "203 - Edgardo Larrea"
+    assert (ws2.column_dimensions[openpyxl.utils.get_column_letter(vendedor_col)].width or 0) >= 28
+
+
+@pytest.mark.parametrize(
+    "legacy_header",
+    ["vendedor/fletero", "vendedor/repartidor", "Vendedor/Repartidor", "fletero"],
+)
+def test_export_reuses_legacy_vendor_fletero_header_and_renames_it(tmp_path, legacy_header):
+    original = tmp_path / "legacy.xlsx"
+    out = tmp_path / "legacy_out.xlsx"
+    _build_workbook(str(original))
+
+    wb = openpyxl.load_workbook(str(original))
+    ws = wb["SALICE GALICIA (ALARCON)"]
+    ws.cell(1, 9, legacy_header)
+    ws.cell(2, 1, "20/02/2026")
+    wb.save(str(original))
+
+    result = {
+        "validados": [{
+            "Origen": "GALICIA",
+            "Fila Excel": 2,
+            "Nro cliente": "123",
+            "Nro recibo": "456",
+            "Vendedor": "203 - Edgardo Larrea",
+            "Ranking": 1,
+        }]
+    }
+    export_filled_bank_excel(str(original), result, str(out))
+
+    wb2 = openpyxl.load_workbook(str(out), data_only=False)
+    ws2 = wb2["SALICE GALICIA (ALARCON)"]
+    headers = [ws2.cell(1, c).value for c in range(1, ws2.max_column + 1)]
+    assert headers.count("fletero/cobrador") == 1
+    fletero_col = headers.index("fletero/cobrador") + 1
+    assert fletero_col == 9
+    assert ws2.cell(2, fletero_col).value == "203 - Edgardo Larrea"
 
 
 def test_export_dudosos_compacts_and_keeps_only_dudoso_rows(tmp_path):

@@ -9,3 +9,7 @@ services:
         sync: false
       - key: GESI_API_PASSWORD
         sync: false
+      - key: RECEIPTS_API_REPARTOS_LOOKBACK_DAYS
+        value: "21"
+      - key: RECEIPTS_API_REPARTOS_CONCURRENCY
+        value: "6"

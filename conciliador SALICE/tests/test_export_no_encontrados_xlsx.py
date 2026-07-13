@@ -2,7 +2,30 @@ from __future__ import annotations
 
 import openpyxl
 
-from src.conciliador.exporter import export_no_encontrados_xlsx
+from src.conciliador.exporter import export_no_encontrados_xlsx, export_xlsx
+
+
+def test_technical_excel_uses_fletero_cobrador_header_in_all_result_sheets(tmp_path):
+    out = tmp_path / "technical.xlsx"
+    base = {
+        "Empresa": "SALICE",
+        "Nro recibo": "1",
+        "Vendedor": "10 - Repartidor Real",
+    }
+    export_xlsx(
+        {
+            "validados": [dict(base)],
+            "dudosos": [dict(base)],
+            "no_encontrados": [{**base, "Tipo no encontrado": "RECIBO_SIN_BANCO"}],
+        },
+        str(out),
+    )
+
+    wb = openpyxl.load_workbook(str(out), data_only=False)
+    for sheet_name in ("Validados", "Dudosos", "No encontrados"):
+        headers = [cell.value for cell in wb[sheet_name][1]]
+        assert "fletero/cobrador" in headers
+        assert "Vendedor" not in headers
 
 
 def test_export_no_encontrados_xlsx_splits_into_4_sheets_without_empty_side_columns(tmp_path):
@@ -75,6 +98,8 @@ def test_export_no_encontrados_xlsx_splits_into_4_sheets_without_empty_side_colu
     assert "Nro cliente" in headers_rec
     assert "Cliente" in headers_rec
     assert "Importe recibo" in headers_rec
+    assert "fletero/cobrador" in headers_rec
+    assert "Vendedor" not in headers_rec
     assert "Origen" not in headers_rec
     assert "Fecha movimiento" not in headers_rec
     assert "Importe movimiento" not in headers_rec

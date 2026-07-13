@@ -12,6 +12,11 @@ import openpyxl
 
 AR_NUMBER_FORMAT = '#.##0,00'
 AR_NUMBER_FORMAT_TRIM = '#,##0.##'
+FLETERO_HEADER = "fletero/cobrador"
+
+
+def _export_header(column: str) -> str:
+    return FLETERO_HEADER if column == "Vendedor" else column
 
 
 def _coerce_export_date(v: object) -> object:
@@ -124,7 +129,7 @@ def export_xlsx(result: Dict[str, List[dict]], out_path: str) -> str:
                     if k not in seen:
                         seen.add(k)
                         cols.append(k)
-        ws.append(cols)
+        ws.append([_export_header(c) for c in cols])
         for r in rows:
             vals = []
             for c in cols:
@@ -297,7 +302,7 @@ def export_no_encontrados_xlsx(result: Dict[str, List[dict]], out_path: str) -> 
             "Importe movimiento": 18,
             "Importe recibo": 18,
             "Detalle movimiento": 48,
-            "Vendedor": 28,
+            FLETERO_HEADER: 28,
             "Ítem en recibo": 18,
             "Fila Excel": 12,
             "Nro recibo": 12,
@@ -337,7 +342,7 @@ def export_no_encontrados_xlsx(result: Dict[str, List[dict]], out_path: str) -> 
                     extras.append(k)
         cols += extras
 
-        ws.append(cols)
+        ws.append([_export_header(c) for c in cols])
         for r in sheet_rows:
             row_values = []
             for c in cols:
@@ -357,7 +362,7 @@ def export_no_encontrados_xlsx(result: Dict[str, List[dict]], out_path: str) -> 
                 if isinstance(cell.value, (int, float)):
                     cell.number_format = AR_NUMBER_FORMAT_TRIM
 
-        _autosize_sheet(ws, cols, len(sheet_rows))
+        _autosize_sheet(ws, [_export_header(c) for c in cols], len(sheet_rows))
 
     bank_cols = [
         "Tipo no encontrado",
@@ -415,7 +420,7 @@ def export_filled_bank_excel(
     """Devuelve el MISMO Excel de ingresos subido por el usuario, pero completado con VALIDADOS.
 
     Reglas:
-      - Completa/sobrescribe columnas (ok/cliente/recibo/vendedor-fletero) para cada validado (Ranking=1).
+      - Completa/sobrescribe columnas (ok/cliente/recibo/fletero-cobrador) para cada validado (Ranking=1).
       - Cliente y Recibo se escriben como NÚMERO cuando sea posible (formato General).
       - Se intenta mantener el libro idéntico al original (gráficos, hojas, formatos).
         Para eso, NO re-guardamos el workbook completo con openpyxl (puede romper libros complejos).
@@ -691,10 +696,22 @@ def export_filled_bank_excel(
             return vendedor_col_by_sheet[sheet]
         ws_hdr = wb[sheet]
         max_scan_cols = min(120, ws_hdr.max_column or 120)
-        aliases = {"vendedor/fletero", "vendedor fletero", "vendedor/repartidor", "vendedor", "fletero"}
+        aliases = {
+            "fletero/cobrador",
+            "fletero cobrador",
+            "vendedor/fletero",
+            "vendedor fletero",
+            "vendedor/repartidor",
+            "vendedor repartidor",
+            "vendedor",
+            "fletero",
+        }
         for c in range(1, max_scan_cols + 1):
             if _norm(ws_hdr.cell(header_row, c).value) in aliases:
                 vendedor_col_by_sheet[sheet] = c
+                writes.setdefault(sheet, []).append(
+                    (header_row, c, FLETERO_HEADER, "inlineStr")
+                )
                 return c
 
         reserved_cliente_col = cliente_nombre_col_by_sheet.get(sheet)
@@ -714,13 +731,13 @@ def export_filled_bank_excel(
             if column_is_empty:
                 vendedor_col_by_sheet[sheet] = c
                 writes.setdefault(sheet, []).append(
-                    (header_row, c, "vendedor/fletero", "inlineStr")
+                    (header_row, c, FLETERO_HEADER, "inlineStr")
                 )
                 return c
         c = max(int(ws_hdr.max_column or 0), rec_col, int(reserved_cliente_col or 0)) + 1
         vendedor_col_by_sheet[sheet] = c
         writes.setdefault(sheet, []).append(
-            (header_row, c, "vendedor/fletero", "inlineStr")
+            (header_row, c, FLETERO_HEADER, "inlineStr")
         )
         return c
 
@@ -987,6 +1004,54 @@ def export_filled_bank_excel(
             t_el = ET.SubElement(is_el, "{%s}t" % main_ns)
             t_el.text = "" if value is None else str(value)
 
+    def _set_min_column_width(root, column: int, width: float) -> None:
+        """Ensacha sólo la columna del fletero, conservando los rangos vecinos."""
+        main_ns = NS["main"]
+        cols = root.find("{%s}cols" % main_ns)
+        if cols is None:
+            cols = ET.Element("{%s}cols" % main_ns)
+            sheet_data = root.find("{%s}sheetData" % main_ns)
+            insert_at = list(root).index(sheet_data) if sheet_data is not None else len(list(root))
+            root.insert(insert_at, cols)
+
+        elements = list(cols.findall("{%s}col" % main_ns))
+        for idx, col_el in enumerate(elements):
+            try:
+                min_col = int(col_el.attrib.get("min", "0"))
+                max_col = int(col_el.attrib.get("max", "0"))
+            except Exception:
+                continue
+            if not (min_col <= column <= max_col):
+                continue
+            current = float(col_el.attrib.get("width", "0") or 0)
+            if current >= width and min_col == max_col:
+                return
+            attrs = dict(col_el.attrib)
+            replacements: list[ET.Element] = []
+            if min_col < column:
+                left = ET.Element("{%s}col" % main_ns, {**attrs, "min": str(min_col), "max": str(column - 1)})
+                replacements.append(left)
+            target_attrs = {**attrs, "min": str(column), "max": str(column)}
+            target_attrs["width"] = str(max(current, width))
+            target_attrs["customWidth"] = "1"
+            target_attrs.pop("bestFit", None)
+            replacements.append(ET.Element("{%s}col" % main_ns, target_attrs))
+            if column < max_col:
+                right = ET.Element("{%s}col" % main_ns, {**attrs, "min": str(column + 1), "max": str(max_col)})
+                replacements.append(right)
+            original_pos = list(cols).index(col_el)
+            cols.remove(col_el)
+            for offset, replacement in enumerate(replacements):
+                cols.insert(original_pos + offset, replacement)
+            return
+
+        cols.append(
+            ET.Element(
+                "{%s}col" % main_ns,
+                {"min": str(column), "max": str(column), "width": str(width), "customWidth": "1"},
+            )
+        )
+
     # --- Reescribir zip reemplazando solo las hojas tocadas ---
     with zipfile.ZipFile(out_path, "r") as zin:
         files = {name: zin.read(name) for name in zin.namelist()}
@@ -1104,6 +1169,10 @@ def export_filled_bank_excel(
                 c_el = _ensure_cell(row_el, ref)
                 c_el.attrib["s"] = str(general_style_idx)
 
+        vendedor_col = vendedor_col_by_sheet.get(sheet_name)
+        if vendedor_col is not None:
+            _set_min_column_width(root, int(vendedor_col), 28.0)
+
         # serializar
         # Preserve a valid XML header similar to the original (standalone="yes").
         files[sheet_path] = ET.tostring(root, encoding="UTF-8", xml_declaration=True, standalone="yes")
@@ -1148,7 +1217,8 @@ def _rows_to_csv_bytes(rows: List[dict]) -> bytes:
                 seen.add(k)
                 cols.append(k)
     buf = io.StringIO()
-    w = csv.DictWriter(buf, fieldnames=cols, extrasaction='ignore')
+    export_cols = [_export_header(c) for c in cols]
+    w = csv.DictWriter(buf, fieldnames=export_cols, extrasaction='ignore')
     w.writeheader()
     for r in rows:
         # For readability, format numeric money fields in es-AR style when possible
@@ -1159,5 +1229,5 @@ def _rows_to_csv_bytes(rows: List[dict]) -> bytes:
                 out[c] = _format_es_ar(v)
             else:
                 out[c] = v
-        w.writerow(out)
+        w.writerow({_export_header(k): v for k, v in out.items()})
     return buf.getvalue().encode('utf-8')

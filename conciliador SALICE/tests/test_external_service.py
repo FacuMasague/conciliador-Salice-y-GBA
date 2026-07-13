@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from src.conciliador.external.errors import ExternalSchemaError
+from src.conciliador.external.repartos_api_client import FleteroMatch
 from src.conciliador.external.service import fetch_cliente_cuit_map, fetch_receipts_and_payments
 
 
@@ -11,6 +12,14 @@ class _Resp:
         self.payload = payload
         self.request_id = request_id
         self.warnings = warnings or []
+
+
+@pytest.fixture(autouse=True)
+def _disable_repartos_network(monkeypatch):
+    monkeypatch.setattr(
+        "src.conciliador.external.service.resolve_fleteros",
+        lambda *args, **kwargs: ({}, []),
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -293,7 +302,7 @@ def test_fetch_receipts_and_payments_gesi_resolves_repartidor_from_official_mast
                 "razonSocial": "Cliente",
                 "vendedorID": 211,
                 "nombreVendedor": "Dato anterior que debe ignorarse",
-                "repartidorID": 0,
+                "repartidorID": 65,
                 "formaDePagoID": 5,
                 "fechaDeEmision": "2026-02-18",
                 "importeTotal": 1234.0,
@@ -312,7 +321,7 @@ def test_fetch_receipts_and_payments_gesi_resolves_repartidor_from_official_mast
     monkeypatch.setattr(
         "src.conciliador.external.service.fetch_padron_payload",
         lambda empresa_filter=None, cliente_ids=None: _Resp(
-            {"clientes": [{"clienteID": 33119, "repartidorID": 65}]}
+            {"clientes": [{"clienteID": 33119, "repartidorID": 999}]}
         ),
     )
     monkeypatch.setattr(
@@ -326,6 +335,48 @@ def test_fetch_receipts_and_payments_gesi_resolves_repartidor_from_official_mast
     payments, _meta = fetch_receipts_and_payments(60, None)
     assert len(payments) == 1
     assert payments[0].vendedor == "65 - Yanina Andrade"
+
+
+def test_fetch_receipts_uses_foja_fletero_and_never_commercial_vendor(monkeypatch):
+    payload = {
+        "comprobantes": [{
+            "empresaID": 3,
+            "numero": 70025,
+            "codigoDeImportacion": "PMCBR_70025",
+            "clienteID": 33119,
+            "razonSocial": "Cliente",
+            "vendedorID": 211,
+            "nombreVendedor": "Vendedor Comercial",
+            "repartidorID": 0,
+            "formaDePagoID": 5,
+            "fechaDeEmision": "2026-02-18",
+            "importeTotal": 1234.0,
+        }],
+        "formasDePago": [{"formaDePagoID": 5, "descripcion": "Transferencia Bancaria"}],
+    }
+    monkeypatch.setattr(
+        "src.conciliador.external.service.fetch_receipts_payload",
+        lambda days, empresa_filter=None: _Resp(payload),
+    )
+    monkeypatch.setattr(
+        "src.conciliador.external.service.fetch_padron_payload",
+        lambda empresa_filter=None, cliente_ids=None: _Resp({"clientes": [{
+            "clienteID": 33119,
+            "vendedorID": 211,
+            "zonaID": 8,
+            "subZonaID": 9,
+        }]}),
+    )
+    monkeypatch.setattr(
+        "src.conciliador.external.service.resolve_fleteros",
+        lambda *args, **kwargs: ({0: FleteroMatch("65", "Yanina Andrade", "invoice_exact")}, []),
+    )
+
+    payments, _ = fetch_receipts_and_payments(60, None)
+
+    assert payments[0].vendedor == "65 - Yanina Andrade"
+    assert "Vendedor Comercial" not in payments[0].vendedor
+    assert "211" not in payments[0].vendedor
 
 
 def test_fetch_receipts_and_payments_gesi_does_not_use_legacy_vendor_fields(monkeypatch):

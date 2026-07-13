@@ -10,8 +10,8 @@ from .errors import ExternalSchemaError
 from .padron_api_client import (
     fetch_padron_payload,
     fetch_repartidores_payload,
-    fetch_vendedores_payload,
 )
+from .repartos_api_client import resolve_fleteros
 from .receipts_api_client import fetch_receipts_payload
 from .types import ExternalPadronEntry, ExternalPayment, ExternalReceipt
 from ..pdf_parser import ReceiptPayment
@@ -174,31 +174,7 @@ def _repartidores_lookup(empresa_filter: str | None = None) -> tuple[Dict[str, s
     return lookup, list(response.warnings or [])
 
 
-def _vendedores_lookup(empresa_filter: str | None = None) -> tuple[Dict[str, str], list[str]]:
-    try:
-        response = fetch_vendedores_payload(empresa_filter=empresa_filter)
-    except Exception as exc:
-        return {}, [f"No se pudo obtener el maestro de vendedores: {exc}"]
-    lookup: Dict[str, str] = {}
-    for row in response.payload.get("vendedores") or []:
-        if not isinstance(row, dict):
-            continue
-        vendedor_id = _norm_numeric_id(
-            _get_any(row, "vendedorID", "vendedor_id", "VendedorID", "id")
-        )
-        nombre = _first_nonempty_text(
-            [
-                _get_any(row, "razonSocial", "razon_social", "RazonSocial"),
-                _get_any(row, "fantasia", "Fantasia"),
-                _get_any(row, "nombre", "descripcion"),
-            ]
-        )
-        if vendedor_id and vendedor_id != "0" and nombre:
-            lookup[vendedor_id] = nombre
-    return lookup, list(response.warnings or [])
-
-
-def _cliente_repartidor_lookup(
+def _cliente_features_lookup(
     comprobantes: List[dict], empresa_filter: str | None = None
 ) -> tuple[Dict[str, Dict[str, str]], Dict[str, str], list[str]]:
     cliente_ids = list(
@@ -219,7 +195,7 @@ def _cliente_repartidor_lookup(
         # presentes en los recibos de esta corrida.
         response = fetch_padron_payload(empresa_filter=empresa_filter)
     except Exception as exc:
-        return {}, {}, [f"No se pudo obtener el repartidor de los clientes: {exc}"]
+        return {}, {}, [f"No se pudieron obtener zona/subzona de los clientes: {exc}"]
 
     lookup: Dict[str, Dict[str, str]] = {}
     cuit_lookup: Dict[str, str] = {}
@@ -242,6 +218,12 @@ def _cliente_repartidor_lookup(
         lookup[cliente_id] = {
             "repartidor_id": "" if repartidor_id == "0" else repartidor_id,
             "vendedor_id": "" if vendedor_id == "0" else vendedor_id,
+            "zona_id": _norm_numeric_id(
+                _get_any(row, "zonaID", "zona_id", "ZonaID")
+            ),
+            "subzona_id": _norm_numeric_id(
+                _get_any(row, "subZonaID", "subzonaID", "subzona_id", "SubZonaID")
+            ),
         }
         cuit = _normalize_cuit(
             _get_any(row, "numeroDeDocumento", "numero_documento", "CUIT")
@@ -251,22 +233,11 @@ def _cliente_repartidor_lookup(
     return lookup, cuit_lookup, list(response.warnings or [])
 
 
-def _repartidor_label(
+def _repartidor_directo_label(
     row: Dict[str, Any],
     repartidores_by_id: Dict[str, str],
-    vendedores_by_id: Dict[str, str],
-    cliente_asignaciones: Dict[str, Dict[str, str]],
 ) -> str:
-    cliente_id = _norm_numeric_id(
-        _get_any(row, "clienteID", "cliente_id", "ClienteID")
-    )
-    asignacion = cliente_asignaciones.get(cliente_id, {})
-    repartidor_id = _repartidor_id_from_comprobante(row) or asignacion.get(
-        "repartidor_id", ""
-    )
-    vendedor_id = asignacion.get("vendedor_id", "")
-    if vendedor_id in vendedores_by_id:
-        return f"{vendedor_id} - {vendedores_by_id[vendedor_id]}"
+    repartidor_id = _repartidor_id_from_comprobante(row)
     if not repartidor_id:
         return ""
     nombre = str(repartidores_by_id.get(repartidor_id) or "").strip()
@@ -1065,32 +1036,34 @@ def fetch_receipts_and_payments(
     elif isinstance(payload.get("comprobantes"), list):
         comprobantes = payload["comprobantes"]
         (
-            cliente_repartidores,
+            cliente_features,
             cliente_cuit_map,
-            cliente_repartidores_warnings,
-        ) = _cliente_repartidor_lookup(comprobantes, empresa_filter)
-        resp.warnings.extend(cliente_repartidores_warnings)
-        has_repartidores = any(
-            assignment.get("repartidor_id")
-            for assignment in cliente_repartidores.values()
-        ) or any(
+            cliente_features_warnings,
+        ) = _cliente_features_lookup(comprobantes, empresa_filter)
+        resp.warnings.extend(cliente_features_warnings)
+        has_direct_repartidores = any(
             isinstance(row, dict) and _repartidor_id_from_comprobante(row)
             for row in comprobantes
         )
-        if has_repartidores:
+        if has_direct_repartidores:
             repartidores_by_id, repartidores_warnings = _repartidores_lookup(empresa_filter)
             resp.warnings.extend(repartidores_warnings)
         else:
             repartidores_by_id = {}
-        has_vendedores = any(
-            assignment.get("vendedor_id")
-            for assignment in cliente_repartidores.values()
-        )
-        if has_vendedores:
-            vendedores_by_id, vendedores_warnings = _vendedores_lookup(empresa_filter)
-            resp.warnings.extend(vendedores_warnings)
+        if any(
+            isinstance(row, dict) and not _repartidor_id_from_comprobante(row)
+            for row in comprobantes
+        ):
+            fleteros_por_foja, fleteros_warnings = resolve_fleteros(
+                comprobantes,
+                cliente_features,
+                empresa_filter=empresa_filter,
+                start_date=start_date,
+                end_date=end_date,
+            )
         else:
-            vendedores_by_id = {}
+            fleteros_por_foja, fleteros_warnings = {}, []
+        resp.warnings.extend(fleteros_warnings)
         formas_rows = payload.get("formasDePago")
         formas_by_id: Dict[str, str] = {}
         if isinstance(formas_rows, list):
@@ -1271,11 +1244,9 @@ def fetch_receipts_and_payments(
                     nro_recibo=nro_recibo,
                     nro_cliente=nro_cliente,
                     cliente_nombre=str(_get_any(c, "razonSocial", "razon_social", "RazonSocial") or "").strip(),
-                    vendedor=_repartidor_label(
-                        c,
-                        repartidores_by_id,
-                        vendedores_by_id,
-                        cliente_repartidores,
+                    vendedor=(
+                        _repartidor_directo_label(c, repartidores_by_id)
+                        or (fleteros_por_foja[i].label if i in fleteros_por_foja else "")
                     ),
                     medio_pago=medio_label,
                     fecha_pago=_parse_date_yyyy_mm_dd(
@@ -1316,6 +1287,8 @@ def fetch_receipts_and_payments(
                 "La API de recibos no devolvió pagos válidos después de aplicar validaciones/filtros."
             ],
             "payments_count": 0,
+            "fleteros_count": 0,
+            "fleteros_missing_count": 0,
             "payments_by_empresa": {},
             "medio_bancarizable_stats": medio_stats,
             "api_empresa_targets_used": payload.get("empresa_targets_used"),
@@ -1327,6 +1300,12 @@ def fetch_receipts_and_payments(
         return [], meta
 
     out = [_external_payment_to_internal(p) for p in payments_flat]
+    fleteros_count = sum(bool(str(p.vendedor or "").strip()) for p in out)
+    fleteros_missing_count = len(out) - fleteros_count
+    resp.warnings.append(
+        f"Fleteros en resultados bancarizables: {fleteros_count}/{len(out)} identificados; "
+        f"{fleteros_missing_count} sin identificar."
+    )
     payments_by_empresa: Dict[str, int] = {}
     for p in out:
         key = str(p.empresa or "").strip().upper() or "SIN_EMPRESA"
@@ -1335,6 +1314,8 @@ def fetch_receipts_and_payments(
         "api_request_id": resp.request_id,
         "external_warnings": list(resp.warnings or []),
         "payments_count": len(out),
+        "fleteros_count": fleteros_count,
+        "fleteros_missing_count": fleteros_missing_count,
         "payments_by_empresa": payments_by_empresa,
         "medio_bancarizable_stats": medio_stats,
         "api_empresa_targets_used": payload.get("empresa_targets_used"),

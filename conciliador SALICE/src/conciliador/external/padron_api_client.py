@@ -28,13 +28,6 @@ class RepartidoresApiResponse:
     warnings: list[str]
 
 
-@dataclass(frozen=True)
-class VendedoresApiResponse:
-    payload: Dict[str, Any]
-    request_id: str | None
-    warnings: list[str]
-
-
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -418,54 +411,4 @@ def fetch_repartidores_payload(*, empresa_filter: str | None = None) -> Repartid
         payload={"repartidores": rows},
         request_id=request_id_last,
         warnings=warnings,
-    )
-
-
-def fetch_vendedores_payload(*, empresa_filter: str | None = None) -> VendedoresApiResponse:
-    """Obtiene el maestro de vendedores usado como asignación comercial del cliente."""
-    if not _env_bool("API_MODE_ENABLED", True):
-        raise ExternalConfigError("API_MODE_ENABLED=false: modo API deshabilitado")
-
-    base = _base_url("PADRON_API")
-    headers = _headers_base("PADRON_API")
-    token = _login_token("PADRON_API", base, headers)
-    headers = {**headers, "Authorization": f"Bearer {token}"}
-    path = (
-        os.getenv("PADRON_API_VENDEDORES_PATH", "/api/Maestros/Vendedores/GetList")
-        or "/api/Maestros/Vendedores/GetList"
-    ).strip()
-    if not path.startswith("/"):
-        path = "/" + path
-
-    rows: list[dict] = []
-    warnings: list[str] = []
-    request_id_last: str | None = None
-    page = 1
-    size = int((os.getenv("PADRON_API_PAGE_SIZE", "500") or "500").strip())
-    while True:
-        url = f"{base}{path}?{urlencode({'pageNumber': str(page), 'pageSize': str(size)})}"
-        payload, request_id = _http_json(url, method="GET", headers=headers)
-        request_id_last = request_id or request_id_last
-        if payload.get("success") is False:
-            raise ExternalProviderError("padron", "Vendedores/GetList devolvió error")
-        page_rows = payload.get("vendedores")
-        if not isinstance(page_rows, list):
-            raise ExternalProviderError(
-                "padron", "Vendedores/GetList no devolvió 'vendedores' lista"
-            )
-        rows.extend(row for row in page_rows if isinstance(row, dict))
-        pagination = payload.get("paginacion")
-        try:
-            total_pages = int(pagination.get("totalPaginas")) if isinstance(pagination, dict) else page
-        except Exception:
-            total_pages = page
-        if page >= total_pages:
-            break
-        page += 1
-        if page > 1000:
-            warnings.append("Corte de paginación de seguridad en Vendedores/GetList")
-            break
-
-    return VendedoresApiResponse(
-        payload={"vendedores": rows}, request_id=request_id_last, warnings=warnings
     )

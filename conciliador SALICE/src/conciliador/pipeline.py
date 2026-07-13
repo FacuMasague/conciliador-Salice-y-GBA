@@ -275,6 +275,8 @@ def compare_excel_pdfs(
     api_medio_bancarizable_stats: Dict[str, int] = {}
     api_targets_used: List[str] = []
     api_count_by_target: Dict[str, int] = {}
+    api_fleteros_count = 0
+    api_fleteros_missing_count = 0
     api_fecha_desde: str | None = None
     api_fecha_hasta: str | None = None
     api_cliente_cuit_map: Dict[str, str] = {}
@@ -376,6 +378,8 @@ def compare_excel_pdfs(
             api_targets_used = [str(x) for x in api_meta.get("api_empresa_targets_used")]
         if isinstance(api_meta.get("api_comprobantes_count_by_target"), dict):
             api_count_by_target = {str(k): int(v) for k, v in api_meta.get("api_comprobantes_count_by_target").items()}
+        api_fleteros_count = int(api_meta.get("fleteros_count") or 0)
+        api_fleteros_missing_count = int(api_meta.get("fleteros_missing_count") or 0)
         api_fecha_desde = str(api_meta.get("api_fecha_desde") or "") or None
         api_fecha_hasta = str(api_meta.get("api_fecha_hasta") or "") or None
         if isinstance(api_meta.get("cliente_cuit_map"), dict):
@@ -656,6 +660,8 @@ def compare_excel_pdfs(
         "api_medio_bancarizable_stats": api_medio_bancarizable_stats,
         "api_empresa_targets_used": api_targets_used,
         "api_comprobantes_count_by_target": api_count_by_target,
+        "api_fleteros_count": api_fleteros_count,
+        "api_fleteros_missing_count": api_fleteros_missing_count,
         "api_fecha_desde": api_fecha_desde,
         "api_fecha_hasta": api_fecha_hasta,
         "receipts_count": len(receipts_all),
