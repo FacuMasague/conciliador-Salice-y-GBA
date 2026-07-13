@@ -31,6 +31,10 @@ services:
         value: "60"
       - key: PADRON_API_GETITEM_CONCURRENCY
         value: "4"
+      - key: RECEIPTS_API_REPARTOS_LOOKBACK_DAYS
+        value: "21"
+      - key: RECEIPTS_API_REPARTOS_CONCURRENCY
+        value: "6"
       - key: GESI_API_USERNAME
         sync: false
       - key: GESI_API_PASSWORD

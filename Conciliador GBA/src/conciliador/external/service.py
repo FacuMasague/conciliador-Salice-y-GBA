@@ -19,6 +19,7 @@ from .receipts_api_client import (
     _resolve_empresa_targets as _receipts_resolve_empresa_targets,
     _page_size_for_targets as _receipts_page_size_for_targets,
 )
+from .repartos_api_client import resolve_gba_fleteros
 from .types import ExternalPadronEntry, ExternalPayment, ExternalReceipt
 from ..pdf_parser import ReceiptPayment
 
@@ -345,6 +346,8 @@ def _cliente_vendedor_repartidor_lookup(comprobantes: List[dict]) -> tuple[Dict[
             out[cid] = {
                 "vendedor_id": "" if vid == "0" else vid,
                 "repartidor_id": "" if rid == "0" else rid,
+                "zona_id": _norm_numeric_id(_get_any(row, "zonaID", "zona_id", "ZonaID")),
+                "subzona_id": _norm_numeric_id(_get_any(row, "subZonaID", "subzona_id", "SubZonaID")),
             }
     return out, list(resp.warnings or [])
 
@@ -1168,16 +1171,38 @@ def fetch_receipts_and_payments(
     # Contract option C (GESI): payload.comprobantes[] + payload.formasDePago[]
     elif isinstance(payload.get("comprobantes"), list):
         if str(empresa_filter or "").strip().upper() == "GBA":
-            repartidores_by_id, repartidores_warnings = _repartidores_lookup()
-            vendedores_by_id, vendedores_warnings = _vendedores_lookup()
             cliente_asignaciones, cliente_asignaciones_warnings = _cliente_vendedor_repartidor_lookup(payload["comprobantes"])
+            if any(
+                _repartidor_id_from_comprobante(row)
+                for row in payload["comprobantes"]
+                if isinstance(row, dict)
+            ):
+                repartidores_by_id, repartidores_warnings = _repartidores_lookup()
+            else:
+                repartidores_by_id, repartidores_warnings = {}, []
+            if any(
+                not _repartidor_id_from_comprobante(row)
+                for row in payload["comprobantes"]
+                if isinstance(row, dict)
+            ):
+                gba_fleteros, gba_fleteros_warnings = resolve_gba_fleteros(
+                    payload["comprobantes"],
+                    cliente_asignaciones,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            else:
+                gba_fleteros, gba_fleteros_warnings = {}, []
+            vendedores_by_id, vendedores_warnings = {}, []
         else:
             repartidores_by_id, repartidores_warnings = {}, []
             vendedores_by_id, vendedores_warnings = {}, []
             cliente_asignaciones, cliente_asignaciones_warnings = {}, []
+            gba_fleteros, gba_fleteros_warnings = {}, []
         resp.warnings.extend(repartidores_warnings)
         resp.warnings.extend(vendedores_warnings)
         resp.warnings.extend(cliente_asignaciones_warnings)
+        resp.warnings.extend(gba_fleteros_warnings)
         formas_rows = payload.get("formasDePago")
         formas_by_id: Dict[str, str] = {}
         if isinstance(formas_rows, list):
@@ -1224,7 +1249,7 @@ def fetch_receipts_and_payments(
             ).strip()
             cliente_asignacion = cliente_asignaciones.get(_norm_numeric_id(nro_cliente), {})
             resolved_vendedor_id = _vendedor_id_from_comprobante(c) or cliente_asignacion.get("vendedor_id", "")
-            resolved_repartidor_id = _repartidor_id_from_comprobante(c) or cliente_asignacion.get("repartidor_id", "")
+            resolved_repartidor_id = _repartidor_id_from_comprobante(c)
             if not nro_recibo or not nro_cliente:
                 skipped_without_receipt_number += 1
                 continue
@@ -1349,6 +1374,29 @@ def fetch_receipts_and_payments(
                 medios_by_valor=medios_by_valor,
             )
 
+            if str(empresa_filter or "").strip().upper() == "GBA":
+                if resolved_repartidor_id:
+                    vendedor_fletero_label = (
+                        f"{resolved_repartidor_id} - {repartidores_by_id[resolved_repartidor_id]}"
+                        if resolved_repartidor_id in repartidores_by_id
+                        else resolved_repartidor_id
+                    )
+                elif i in gba_fleteros:
+                    vendedor_fletero_label = gba_fleteros[i].label
+                else:
+                    vendedor_fletero_label = ""
+            else:
+                comprobante_vendor_label = _vendor_label_from_comprobante(c)
+                vendedor_fletero_label = (
+                    comprobante_vendor_label
+                    if " - " in comprobante_vendor_label
+                    else (
+                        f"{resolved_vendedor_id} - {vendedores_by_id[resolved_vendedor_id]}"
+                        if resolved_vendedor_id in vendedores_by_id
+                        else comprobante_vendor_label
+                    )
+                )
+
             payments_flat.append(
                 ExternalPayment(
                     empresa=(
@@ -1372,19 +1420,7 @@ def fetch_receipts_and_payments(
                     nro_recibo=nro_recibo,
                     nro_cliente=nro_cliente,
                     cliente_nombre=str(_get_any(c, "razonSocial", "razon_social", "RazonSocial") or "").strip(),
-                    vendedor=(
-                        _vendor_label_from_comprobante(c)
-                        if " - " in _vendor_label_from_comprobante(c)
-                        else (
-                            f"{resolved_vendedor_id} - {vendedores_by_id[resolved_vendedor_id]}"
-                            if resolved_vendedor_id in vendedores_by_id
-                            else (
-                                f"{resolved_repartidor_id} - {repartidores_by_id[resolved_repartidor_id]}"
-                                if resolved_repartidor_id in repartidores_by_id
-                                else _vendor_label_from_comprobante(c)
-                            )
-                        )
-                    ),
+                    vendedor=vendedor_fletero_label,
                     medio_pago=medio_label,
                     fecha_pago=_parse_date_yyyy_mm_dd(
                         _get_any(

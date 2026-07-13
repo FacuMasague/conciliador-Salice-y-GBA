@@ -1339,7 +1339,7 @@
           const inner = document.createElement('span');
           inner.className = 'th-inner';
           const label = document.createElement('span');
-          label.textContent = c;
+          label.textContent = c === 'Vendedor/Repartidor' ? 'Fletero/Cobrador' : c;
           const arrow = document.createElement('span');
           arrow.className = 'sort-arrow';
           inner.appendChild(label);
@@ -1347,7 +1347,7 @@
           th.appendChild(inner);
           th.addEventListener('click', () => toggleTableSort(tableId, c));
         } else {
-          th.textContent = c;
+          th.textContent = c === 'Vendedor/Repartidor' ? 'Fletero/Cobrador' : c;
         }
         trh.appendChild(th);
       });

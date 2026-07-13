@@ -43,11 +43,11 @@ def test_export_filled_generic_excel_writes_tracking_columns_into_gba_bank_recor
     assert "ok" in headers
     assert "cliente nombre" in headers
     assert "recibo" in headers
-    assert "vendedor/fletero" in headers
+    assert "fletero/cobrador" in headers
     ok_col = headers.index("ok") + 1
     cliente_nombre_col = headers.index("cliente nombre") + 1
     recibo_col = headers.index("recibo") + 1
-    vendedor_col = headers.index("vendedor/fletero") + 1
+    vendedor_col = headers.index("fletero/cobrador") + 1
     assert ws_out.cell(2, ok_col).value == "ok"
     assert ws_out.cell(2, cliente_nombre_col).value == "Cliente GBA"
     assert str(ws_out.cell(2, recibo_col).value) == "272641"

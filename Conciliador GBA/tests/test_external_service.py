@@ -393,7 +393,7 @@ def test_fetch_receipts_and_payments_gba_resolves_repartidor_name(monkeypatch):
     assert payments[0].vendedor == "211 - Luzzi Gustavo"
 
 
-def test_fetch_receipts_and_payments_gba_resolves_cliente_vendedor_name(monkeypatch):
+def test_fetch_receipts_and_payments_gba_does_not_return_cliente_vendor_as_fletero(monkeypatch):
     payload = {
         "comprobantes": [{
             "empresaID": 2,
@@ -423,10 +423,14 @@ def test_fetch_receipts_and_payments_gba_resolves_cliente_vendedor_name(monkeypa
         "src.conciliador.external.service._cliente_vendedor_repartidor_lookup",
         lambda rows: ({"18078": {"vendedor_id": "65", "repartidor_id": ""}}, []),
     )
+    monkeypatch.setattr(
+        "src.conciliador.external.service.resolve_gba_fleteros",
+        lambda rows, features, start_date=None, end_date=None: ({}, []),
+    )
 
     payments, _meta = fetch_receipts_and_payments(3, "GBA")
 
-    assert payments[0].vendedor == "65 - Vendedor Sesenta y Cinco"
+    assert payments[0].vendedor is None
 
 
 def test_fetch_receipts_and_payments_gesi_reads_nested_vendor_name_variants(monkeypatch):

@@ -751,7 +751,7 @@ def export_filled_generic_excel(
             "fecha recibo": 14,
             "medio de pago": 20,
             "importe recibo": 16,
-            "vendedor/fletero": 32,
+            "fletero/cobrador": 32,
         }
         ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = widths.get(label, 16)
         return col
@@ -791,7 +791,7 @@ def export_filled_generic_excel(
             "fecha_recibo": _find_col(ws, header_row, ["fecha recibo", "fecha_recibo"]),
             "medio_pago": _find_col(ws, header_row, ["medio de pago", "medio_pago"]),
             "importe_recibo": _find_col(ws, header_row, ["importe recibo", "importe_recibo"]),
-            "vendedor_fletero": _find_col(ws, header_row, ["vendedor/fletero", "vendedor repartidor", "vendedor/repartidor", "fletero", "vendedor"]),
+            "vendedor_fletero": _find_col(ws, header_row, ["fletero/cobrador", "vendedor/fletero", "vendedor repartidor", "vendedor/repartidor", "fletero", "vendedor"]),
         }
         if cols["ok"] is None:
             cols["ok"] = _append_header_col(ws, header_row, "ok")
@@ -808,7 +808,10 @@ def export_filled_generic_excel(
         if cols["importe_recibo"] is None:
             cols["importe_recibo"] = _append_header_col(ws, header_row, "importe recibo")
         if cols["vendedor_fletero"] is None:
-            cols["vendedor_fletero"] = _append_header_col(ws, header_row, "vendedor/fletero")
+            cols["vendedor_fletero"] = _append_header_col(ws, header_row, "fletero/cobrador")
+        else:
+            # Normaliza también records creados por versiones anteriores.
+            ws.cell(header_row, cols["vendedor_fletero"], "fletero/cobrador")
         widths_by_key = {
             "ok": 8,
             "cliente": 12,
