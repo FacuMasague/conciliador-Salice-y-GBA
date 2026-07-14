@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 from src.conciliador.external.errors import ExternalSchemaError
-from src.conciliador.external.repartos_api_client import FleteroMatch
 from src.conciliador.external.service import fetch_cliente_cuit_map, fetch_receipts_and_payments
 
 
@@ -290,7 +289,7 @@ def test_fetch_receipts_and_payments_gesi_maps_empresa_from_empresas_master(monk
     assert payments[0].empresa == "ALARCON"
 
 
-def test_fetch_receipts_and_payments_gesi_resolves_repartidor_from_official_master(monkeypatch):
+def test_fetch_receipts_does_not_confuse_direct_repartidor_with_collector(monkeypatch):
     payload = {
         "comprobantes": [
             {
@@ -334,10 +333,10 @@ def test_fetch_receipts_and_payments_gesi_resolves_repartidor_from_official_mast
 
     payments, _meta = fetch_receipts_and_payments(60, None)
     assert len(payments) == 1
-    assert payments[0].vendedor == "65 - Yanina Andrade"
+    assert not payments[0].vendedor
 
 
-def test_fetch_receipts_uses_foja_fletero_and_never_commercial_vendor(monkeypatch):
+def test_fetch_receipts_does_not_use_foja_or_commercial_vendor_as_collector(monkeypatch):
     payload = {
         "comprobantes": [{
             "empresaID": 3,
@@ -369,14 +368,12 @@ def test_fetch_receipts_uses_foja_fletero_and_never_commercial_vendor(monkeypatc
     )
     monkeypatch.setattr(
         "src.conciliador.external.service.resolve_fleteros",
-        lambda *args, **kwargs: ({0: FleteroMatch("65", "Yanina Andrade", "invoice_exact")}, []),
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no debe consultar fojas")),
     )
 
     payments, _ = fetch_receipts_and_payments(60, None)
 
-    assert payments[0].vendedor == "65 - Yanina Andrade"
-    assert "Vendedor Comercial" not in payments[0].vendedor
-    assert "211" not in payments[0].vendedor
+    assert not payments[0].vendedor
 
 
 def test_fetch_receipts_and_payments_gesi_does_not_use_legacy_vendor_fields(monkeypatch):
@@ -413,7 +410,7 @@ def test_fetch_receipts_and_payments_gesi_does_not_use_legacy_vendor_fields(monk
     assert not payments[0].vendedor
 
 
-def test_fetch_receipts_and_payments_gesi_keeps_unknown_repartidor_code(monkeypatch):
+def test_fetch_receipts_and_payments_gesi_ignores_unknown_repartidor_code(monkeypatch):
     payload = {
         "comprobantes": [
             {
@@ -446,7 +443,36 @@ def test_fetch_receipts_and_payments_gesi_keeps_unknown_repartidor_code(monkeypa
 
     payments, _meta = fetch_receipts_and_payments(60, None)
     assert len(payments) == 1
-    assert payments[0].vendedor == "999"
+    assert not payments[0].vendedor
+
+
+def test_fetch_receipts_uses_explicit_operation_collector_when_gesi_provides_it(monkeypatch):
+    payload = {
+        "comprobantes": [
+            {
+                "empresaID": 3,
+                "codigoDeImportacion": "PMCBR_70024",
+                "clienteID": 33119,
+                "razonSocial": "Cliente",
+                "formaDePagoID": 5,
+                "fechaDeEmision": "2026-02-18",
+                "importeTotal": 1234.0,
+                "cobradorID": 206,
+                "nombreCobrador": "Andres Dominguez",
+            }
+        ],
+        "formasDePago": [
+            {"formaDePagoID": 5, "descripcion": "Transferencia Bancaria"},
+        ],
+    }
+    monkeypatch.setattr(
+        "src.conciliador.external.service.fetch_receipts_payload",
+        lambda days, empresa_filter=None: _Resp(payload),
+    )
+
+    payments, _meta = fetch_receipts_and_payments(60, "SALICE")
+
+    assert payments[0].vendedor == "206 - Andres Dominguez"
 
 
 def test_fetch_receipts_and_payments_gesi_reads_medio_from_canal(monkeypatch):

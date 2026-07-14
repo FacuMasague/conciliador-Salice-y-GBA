@@ -29,6 +29,7 @@ class ReceiptPayment:
 
 _RE_HEADER_WITH_DATE = re.compile(r"^(?P<recibo>\d+)\s+(?P<cliente>\d+)\s+-\s+(?P<nombre>.+?)\s+\d{2}/\d{2}/\d{4}\b")
 _RE_HEADER = re.compile(r"^(?P<recibo>\d+)\s+(?P<cliente>\d+)\s+-\s+(?P<nombre>.*)$")
+_RE_COLLECTOR = re.compile(r"^\[(?P<codigo>\d+)\s*-\s*(?P<nombre>[^\]]+)\](?:.*)?$")
 _RE_PAY_LINE = re.compile(
     r"^(?P<prefix>Transferencia(?:\s+Bancar)?|Mercado\s+Pago).*?\|\s*(?P<fecha>\d{4}-\d{2}-\d{2})\s*\|\s*(?P<importe>-?\d+(?:\.\d+)?)\s*$",
     re.IGNORECASE,
@@ -121,6 +122,26 @@ def parse_receipts_and_payments_from_text(text: str, *, empresa_override: str | 
                 vendedor=None,
             )
             receipts.append(current)
+            continue
+
+        # El reporte de Pedidos Móviles identifica al usuario que generó el
+        # recibo en una línea propia: "[206 - Andres Dominguez]". En modo API
+        # este dato se usa sólo para enriquecer el cobrador por nro. de recibo;
+        # importes, fechas y medios siguen viniendo de GESI.
+        collector_match = _RE_COLLECTOR.match(line)
+        if collector_match and current:
+            collector = (
+                f"{collector_match.group('codigo').strip()} - "
+                f"{collector_match.group('nombre').strip()}"
+            )
+            current = Receipt(
+                empresa=current.empresa,
+                nro_recibo=current.nro_recibo,
+                nro_cliente=current.nro_cliente,
+                cliente_nombre=current.cliente_nombre,
+                vendedor=collector,
+            )
+            receipts[-1] = current
             continue
 
         pm = _RE_PAY_LINE.match(line)

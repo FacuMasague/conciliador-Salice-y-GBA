@@ -244,6 +244,31 @@ def _repartidor_directo_label(
     return f"{repartidor_id} - {nombre}" if nombre else repartidor_id
 
 
+def _cobrador_directo_label(row: Dict[str, Any]) -> str:
+    """Lee sólo un cobrador explícito de la operación, nunca del cliente.
+
+    En el tenant actual este campo no viene informado, pero se conserva el
+    soporte por si GESI empieza a exponerlo en Cobros/GetList/GetItem.
+    """
+    cobrador_id = _norm_numeric_id(
+        _get_any(row, "cobradorID", "cobrador_id", "CobradorID", "idCobrador")
+    )
+    if not cobrador_id or cobrador_id == "0":
+        return ""
+    nombre = _first_nonempty_text(
+        [
+            _get_any(
+                row,
+                "nombreCobrador",
+                "cobradorNombre",
+                "descripcionCobrador",
+                "razonSocialCobrador",
+            )
+        ]
+    )
+    return f"{cobrador_id} - {nombre}" if nombre else cobrador_id
+
+
 def _forma_pago_id_from_row(row: Dict[str, Any]) -> str:
     return str(
         _get_any(
@@ -1041,29 +1066,10 @@ def fetch_receipts_and_payments(
             cliente_features_warnings,
         ) = _cliente_features_lookup(comprobantes, empresa_filter)
         resp.warnings.extend(cliente_features_warnings)
-        has_direct_repartidores = any(
-            isinstance(row, dict) and _repartidor_id_from_comprobante(row)
-            for row in comprobantes
-        )
-        if has_direct_repartidores:
-            repartidores_by_id, repartidores_warnings = _repartidores_lookup(empresa_filter)
-            resp.warnings.extend(repartidores_warnings)
-        else:
-            repartidores_by_id = {}
-        if any(
-            isinstance(row, dict) and not _repartidor_id_from_comprobante(row)
-            for row in comprobantes
-        ):
-            fleteros_por_foja, fleteros_warnings = resolve_fleteros(
-                comprobantes,
-                cliente_features,
-                empresa_filter=empresa_filter,
-                start_date=start_date,
-                end_date=end_date,
-            )
-        else:
-            fleteros_por_foja, fleteros_warnings = {}, []
-        resp.warnings.extend(fleteros_warnings)
+        # V5.2.2: las fojas describen al repartidor logístico, no al usuario
+        # que cobró y generó el recibo. Tampoco se usa el vendedor comercial
+        # del cliente. El cobrador se completa luego desde el PDF de Pedidos
+        # Móviles, salvo que GESI informe un cobradorID real en la operación.
         formas_rows = payload.get("formasDePago")
         formas_by_id: Dict[str, str] = {}
         if isinstance(formas_rows, list):
@@ -1244,10 +1250,7 @@ def fetch_receipts_and_payments(
                     nro_recibo=nro_recibo,
                     nro_cliente=nro_cliente,
                     cliente_nombre=str(_get_any(c, "razonSocial", "razon_social", "RazonSocial") or "").strip(),
-                    vendedor=(
-                        _repartidor_directo_label(c, repartidores_by_id)
-                        or (fleteros_por_foja[i].label if i in fleteros_por_foja else "")
-                    ),
+                    vendedor=_cobrador_directo_label(c),
                     medio_pago=medio_label,
                     fecha_pago=_parse_date_yyyy_mm_dd(
                         _get_any(
@@ -1303,8 +1306,8 @@ def fetch_receipts_and_payments(
     fleteros_count = sum(bool(str(p.vendedor or "").strip()) for p in out)
     fleteros_missing_count = len(out) - fleteros_count
     resp.warnings.append(
-        f"Fleteros en resultados bancarizables: {fleteros_count}/{len(out)} identificados; "
-        f"{fleteros_missing_count} sin identificar."
+        f"Cobradores directos informados por GESI: {fleteros_count}/{len(out)}; "
+        f"{fleteros_missing_count} pendientes de enriquecer desde Pedidos Móviles."
     )
     payments_by_empresa: Dict[str, int] = {}
     for p in out:

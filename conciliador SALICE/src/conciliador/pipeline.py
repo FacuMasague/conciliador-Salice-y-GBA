@@ -6,6 +6,7 @@ import datetime as dt
 import os
 import time
 import unicodedata
+from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
@@ -103,6 +104,100 @@ def _normalize_recibo(value: object) -> Optional[str]:
         except Exception:
             return digits.lstrip("0") or "0"
     return s.upper()
+
+
+def enrich_api_payments_with_pdf_collectors(
+    payments: List,
+    collector_receipts: List,
+) -> tuple[List, Dict[str, int], List[str]]:
+    """Completa el cobrador de pagos API usando el nro. de recibo del PDF PM.
+
+    El PDF no reemplaza importes, fechas ni medios de pago de GESI. Sólo aporta
+    el usuario/cobrador que figura explícitamente como ``[ID - nombre]``.
+    """
+    exact: Dict[tuple[str, str], str] = {}
+    by_number: Dict[str, set[str]] = {}
+    conflicts = 0
+    pdf_receipt_numbers: set[tuple[str, str]] = set()
+
+    for receipt in collector_receipts:
+        number = _normalize_recibo(getattr(receipt, "nro_recibo", None))
+        collector = str(getattr(receipt, "vendedor", "") or "").strip()
+        company = str(getattr(receipt, "empresa", "") or "").strip().upper()
+        if not number or not collector:
+            continue
+        key = (company, number)
+        previous = exact.get(key)
+        if previous and previous != collector:
+            conflicts += 1
+            continue
+        exact[key] = collector
+        pdf_receipt_numbers.add(key)
+        by_number.setdefault(number, set()).add(collector)
+
+    enriched: List = []
+    matched_pdf_keys: set[tuple[str, str]] = set()
+    enriched_count = 0
+    for payment in payments:
+        number = _normalize_recibo(getattr(payment, "nro_recibo", None))
+        company = str(getattr(payment, "empresa", "") or "").strip().upper()
+        collector = exact.get((company, number or ""))
+        if collector:
+            matched_pdf_keys.add((company, number or ""))
+        elif number and len(by_number.get(number, set())) == 1:
+            collector = next(iter(by_number[number]))
+            for key in pdf_receipt_numbers:
+                if key[1] == number:
+                    matched_pdf_keys.add(key)
+                    break
+
+        if collector:
+            enriched.append(replace(payment, vendedor=collector))
+            enriched_count += 1
+        else:
+            enriched.append(payment)
+
+    with_collector = sum(
+        bool(str(getattr(payment, "vendedor", "") or "").strip())
+        for payment in enriched
+    )
+    stats = {
+        "pdf_collectors_count": len(exact),
+        "api_payments_enriched_count": enriched_count,
+        "api_collectors_count": with_collector,
+        "api_collectors_missing_count": len(enriched) - with_collector,
+        "pdf_collectors_not_in_api_count": len(pdf_receipt_numbers - matched_pdf_keys),
+        "pdf_collector_conflicts_count": conflicts,
+    }
+    warnings: List[str] = []
+    if exact:
+        warnings.append(
+            f"Cobradores: {enriched_count}/{len(enriched)} pagos API fueron enriquecidos "
+            f"desde {len(exact)} recibos del PDF de Pedidos Móviles."
+        )
+        missing = stats["api_collectors_missing_count"]
+        if missing:
+            warnings.append(
+                f"Cobradores: {missing} pagos API quedaron sin cobrador porque su recibo "
+                "no aparece identificado en el PDF de control."
+            )
+        if stats["pdf_collectors_not_in_api_count"]:
+            warnings.append(
+                "Cobradores: "
+                f"{stats['pdf_collectors_not_in_api_count']} recibos del PDF no fueron "
+                "devueltos por GESI en el rango consultado."
+            )
+        if conflicts:
+            warnings.append(
+                f"Cobradores: se ignoraron {conflicts} asignaciones contradictorias dentro del PDF."
+            )
+    else:
+        warnings.append(
+            "Cobradores: no se recibió un PDF de Pedidos Móviles con líneas "
+            "'[ID - nombre]'. GESI no informa el cobrador del recibo, por lo que "
+            "los casos sin dato directo quedan vacíos."
+        )
+    return enriched, stats, warnings
 
 
 def _find_padron_column(df: pd.DataFrame, candidates: list[str]) -> Optional[str]:
@@ -254,7 +349,8 @@ def compare_excel_pdfs(
 
     receipts_source:
       - "pdf": usa `pdfs` como entrada (modo legacy).
-      - "api": ignora PDFs y trae recibos por API.
+      - "api": trae recibos por API y, si se adjunta un PDF de Pedidos
+        Móviles, lo usa sólo para completar el cobrador por nro. de recibo.
     """
     t0 = time.perf_counter()
     mem_dbg = is_mem_debug_enabled(mem_debug)
@@ -277,6 +373,14 @@ def compare_excel_pdfs(
     api_count_by_target: Dict[str, int] = {}
     api_fleteros_count = 0
     api_fleteros_missing_count = 0
+    api_collector_stats: Dict[str, int] = {
+        "pdf_collectors_count": 0,
+        "api_payments_enriched_count": 0,
+        "api_collectors_count": 0,
+        "api_collectors_missing_count": 0,
+        "pdf_collectors_not_in_api_count": 0,
+        "pdf_collector_conflicts_count": 0,
+    }
     api_fecha_desde: str | None = None
     api_fecha_hasta: str | None = None
     api_cliente_cuit_map: Dict[str, str] = {}
@@ -388,6 +492,35 @@ def compare_excel_pdfs(
                 for k, v in api_meta["cliente_cuit_map"].items()
                 if str(k).strip() and str(v).strip()
             }
+
+        # GESI no devuelve el usuario que generó los recibos importados desde
+        # Pedidos Móviles. El reporte PM sí contiene la relación exacta
+        # nro_recibo -> [ID - nombre], por lo que se usa exclusivamente para
+        # enriquecer ese campo sin reemplazar ningún dato monetario de la API.
+        collector_receipts = []
+        for pdf_path, empresa_override in pdfs:
+            text = extract_pdf_text(pdf_path)
+            pdf_receipts, _pdf_payments_ignored = parse_receipts_and_payments_from_text(
+                text,
+                empresa_override=empresa_override,
+            )
+            receipts_all.extend(pdf_receipts)
+            collector_receipts.extend(pdf_receipts)
+            pdf_warnings.extend(detect_pdf_warnings_from_text(text[:150_000]))
+            rmin, rmax = report_period_range_from_text(text[:60_000])
+            if rmin:
+                rmins.append(rmin)
+            if rmax:
+                rmaxs.append(rmax)
+
+        payments_all, api_collector_stats, collector_warnings = (
+            enrich_api_payments_with_pdf_collectors(payments_all, collector_receipts)
+        )
+        external_warnings.extend(collector_warnings)
+        api_fleteros_count = int(api_collector_stats["api_collectors_count"])
+        api_fleteros_missing_count = int(
+            api_collector_stats["api_collectors_missing_count"]
+        )
         mem_mark("api_receipts_parsed", {"payments_count": len(payments_all), "window_days": effective_api_days})
 
     payments_filtered_old = 0
@@ -662,6 +795,12 @@ def compare_excel_pdfs(
         "api_comprobantes_count_by_target": api_count_by_target,
         "api_fleteros_count": api_fleteros_count,
         "api_fleteros_missing_count": api_fleteros_missing_count,
+        "api_cobradores_count": api_collector_stats["api_collectors_count"],
+        "api_cobradores_missing_count": api_collector_stats["api_collectors_missing_count"],
+        "api_payments_enriched_from_pdf_count": api_collector_stats["api_payments_enriched_count"],
+        "pdf_cobradores_count": api_collector_stats["pdf_collectors_count"],
+        "pdf_cobradores_not_in_api_count": api_collector_stats["pdf_collectors_not_in_api_count"],
+        "pdf_cobradores_conflicts_count": api_collector_stats["pdf_collector_conflicts_count"],
         "api_fecha_desde": api_fecha_desde,
         "api_fecha_hasta": api_fecha_hasta,
         "receipts_count": len(receipts_all),

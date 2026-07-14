@@ -25,7 +25,7 @@ from src.conciliador.external.errors import ExternalConfigError, ExternalProvide
 
 
 # Versión visible en UI y en /docs
-APP_VERSION = "5.2.1"
+APP_VERSION = "5.2.2"
 app = FastAPI(title="Conciliador de Recibos e Ingresos", version=APP_VERSION)
 
 # Para desarrollo web (frontend local) sin fricción.
@@ -209,11 +209,11 @@ async def compare(
     tmp_dir = tempfile.mkdtemp(prefix="conciliador_")
     rid = request_id or uuid.uuid4().hex
     pdfs: list[tuple[str, str | None, str]] = []  # (path, empresa_override, original_filename)
-    if source == "pdf" and pdf_salice is not None:
+    if pdf_salice is not None:
         pdf_ext = _suffix(pdf_salice.filename or "", default=".pdf")
         pdf_path = os.path.join(tmp_dir, f"{rid}_salice{pdf_ext}")
         pdfs.append((pdf_path, "SALICE", pdf_salice.filename or ""))
-    if source == "pdf" and pdf_alarcon is not None:
+    if pdf_alarcon is not None:
         pdf_ext = _suffix(pdf_alarcon.filename or "", default=".pdf")
         pdf_path = os.path.join(tmp_dir, f"{rid}_alarcon{pdf_ext}")
         pdfs.append((pdf_path, "ALARCON", pdf_alarcon.filename or ""))
@@ -228,12 +228,11 @@ async def compare(
         )
         working_excel_path = str(prepared["working_excel_path"])
 
-        if source == "pdf":
-            for path, _empresa, _fn in pdfs:
-                up = pdf_salice if _empresa == "SALICE" else pdf_alarcon
-                if up is None:
-                    continue
-                await _save_upload(up, path)
+        for path, _empresa, _fn in pdfs:
+            up = pdf_salice if _empresa == "SALICE" else pdf_alarcon
+            if up is None:
+                continue
+            await _save_upload(up, path)
 
         # Compat: si llega day_weight (viejo), lo aplicamos a ambos multiplicadores.
         if day_weight is not None:
@@ -353,11 +352,11 @@ async def export(
     tmp_dir = tempfile.mkdtemp(prefix="conciliador_export_")
     rid = request_id or uuid.uuid4().hex
     pdfs: list[tuple[str, str | None, str]] = []  # (path, empresa_override, original_filename)
-    if source == "pdf" and pdf_salice is not None:
+    if pdf_salice is not None:
         pdf_ext = _suffix(pdf_salice.filename or "", default=".pdf")
         pdf_path = os.path.join(tmp_dir, f"{rid}_salice{pdf_ext}")
         pdfs.append((pdf_path, "SALICE", pdf_salice.filename or ""))
-    if source == "pdf" and pdf_alarcon is not None:
+    if pdf_alarcon is not None:
         pdf_ext = _suffix(pdf_alarcon.filename or "", default=".pdf")
         pdf_path = os.path.join(tmp_dir, f"{rid}_alarcon{pdf_ext}")
         pdfs.append((pdf_path, "ALARCON", pdf_alarcon.filename or ""))
@@ -373,12 +372,11 @@ async def export(
         working_excel_path = str(prepared["working_excel_path"])
         base_excel_filename = prepared.get("base_excel_filename")
 
-        if source == "pdf":
-            for path, _empresa, _fn in pdfs:
-                up = pdf_salice if _empresa == "SALICE" else pdf_alarcon
-                if up is None:
-                    continue
-                await _save_upload(up, path)
+        for path, _empresa, _fn in pdfs:
+            up = pdf_salice if _empresa == "SALICE" else pdf_alarcon
+            if up is None:
+                continue
+            await _save_upload(up, path)
 
         if day_weight is not None:
             day_weight_bank_before = float(day_weight)

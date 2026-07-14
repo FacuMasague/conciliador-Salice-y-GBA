@@ -38,6 +38,33 @@ def test_compare_api_mode_accepts_no_pdfs(monkeypatch):
     assert body["meta"]["app_version"] == app_module.APP_VERSION
 
 
+def test_compare_api_mode_passes_optional_collector_pdf(monkeypatch):
+    client = TestClient(app_module.app)
+
+    def _fake_compare(_excel_path, pdfs, **kwargs):
+        assert kwargs.get("receipts_source") == "api"
+        assert len(pdfs) == 1
+        pdf_path, company = pdfs[0]
+        assert company == "SALICE"
+        with open(pdf_path, "rb") as fh:
+            assert fh.read() == b"collector-pdf"
+        return {"validados": [], "dudosos": [], "no_encontrados": [], "meta": {}}
+
+    monkeypatch.setattr(app_module, "compare_excel_pdfs", _fake_compare)
+    files = {
+        "excel": (
+            "legacy.xlsx",
+            _minimal_xlsx_bytes(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ),
+        "pdf_salice": ("cobradores.pdf", b"collector-pdf", "application/pdf"),
+    }
+
+    response = client.post("/compare?receipts_source=api", files=files)
+
+    assert response.status_code == 200, response.text
+
+
 def test_compare_pdf_mode_requires_pdf(monkeypatch):
     client = TestClient(app_module.app)
 

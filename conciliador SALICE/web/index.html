@@ -321,17 +321,17 @@
           </label>
         </div>
 
-        <div id="pdf_upload_col" class="upload-col upload-col--wide hidden">
+        <div id="pdf_upload_col" class="upload-col upload-col--wide">
           <div class="upload-head">
             <div>
-              <div class="upload-title">Recibos PDF</div>
-              <div class="upload-note">Disponible únicamente en modo legacy.</div>
+              <div id="pdf_upload_title" class="upload-title">Control de cobradores</div>
+              <div id="pdf_upload_note" class="upload-note">Subí el reporte de Pedidos Móviles para completar el cobrador exacto de cada recibo.</div>
             </div>
-            <span class="upload-tag">Legacy</span>
+            <span id="pdf_upload_tag" class="upload-tag">Paso 3</span>
           </div>
           <div class="upload-stack">
             <div>
-              <div class="upload-title" style="font-size:14px;">PDF recibos SALICE</div>
+              <div class="upload-title" style="font-size:14px;">PDF Pedidos Móviles SALICE</div>
               <input id="pdf_salice" class="file-hidden" type="file" accept="application/pdf,.pdf" />
               <label for="pdf_salice" class="drop" title="Seleccionar PDF SALICE">
                 <div class="drop-inner">
@@ -343,7 +343,7 @@
             </div>
 
             <div>
-              <div class="upload-title" style="font-size:14px;">PDF recibos Alarcón</div>
+              <div class="upload-title" style="font-size:14px;">PDF Pedidos Móviles Alarcón</div>
               <input id="pdf_alarcon" class="file-hidden" type="file" accept="application/pdf,.pdf" />
               <label for="pdf_alarcon" class="drop" title="Seleccionar PDF Alarcón">
                 <div class="drop-inner">
@@ -961,9 +961,13 @@
       const api = isApiMode();
       const uploads = document.querySelector('.uploads');
       const rangePanel = $("api_range_panel");
-      $("pdf_upload_col").classList.toggle('hidden', api);
       if (rangePanel) rangePanel.classList.toggle('hidden', !api);
       if (uploads) uploads.classList.toggle('uploads--api', api);
+      $("pdf_upload_title").textContent = api ? 'Control de cobradores' : 'Recibos PDF';
+      $("pdf_upload_note").textContent = api
+        ? 'Obligatorio para obtener el cobrador correcto. Los importes y medios siguen viniendo de GESI.'
+        : 'En modo legacy, el PDF también se usa como fuente de los recibos.';
+      $("pdf_upload_tag").textContent = api ? 'Paso 3' : 'Legacy';
       if (!api) closeDatePopover();
     }
 
@@ -1511,6 +1515,9 @@
         if (source === 'pdf' && !pdfSalice && !pdfAlarcon) {
           throw new Error("En modo legacy, tenés que subir al menos 1 PDF (SALICE o Alarcón).");
         }
+        if (source === 'api' && !pdfSalice && !pdfAlarcon) {
+          throw new Error("Subí el PDF de Pedidos Móviles para obtener el cobrador correcto.");
+        }
 
         const margin = encodeURIComponent($("margin").value);
         const tDaysSus = encodeURIComponent($("t_days_sus").value);
@@ -1542,10 +1549,8 @@
         const form = new FormData();
         form.append('record_excel', recordExcel);
         rawBanks.forEach((f) => form.append('raw_bank_files', f));
-        if (source === 'pdf') {
-          if (pdfSalice) form.append('pdf_salice', pdfSalice);
-          if (pdfAlarcon) form.append('pdf_alarcon', pdfAlarcon);
-        }
+        if (pdfSalice) form.append('pdf_salice', pdfSalice);
+        if (pdfAlarcon) form.append('pdf_alarcon', pdfAlarcon);
 
         const res = await fetch(url, { method: 'POST', body: form });
         const text = await res.text();
@@ -1618,6 +1623,9 @@
         if (source === 'pdf' && !pdfSalice && !pdfAlarcon) {
           throw new Error("En modo legacy, tenés que subir al menos 1 PDF.");
         }
+        if (source === 'api' && !pdfSalice && !pdfAlarcon) {
+          throw new Error("Subí el PDF de Pedidos Móviles para obtener el cobrador correcto.");
+        }
 
         const margin = encodeURIComponent($("margin").value);
         const tDaysSus = encodeURIComponent($("t_days_sus").value);
@@ -1655,10 +1663,8 @@
         if (deletedDudosos && deletedDudosos.length) {
           form.append('drop_dudosos', JSON.stringify(deletedDudosos));
         }
-        if (source === 'pdf') {
-          if (pdfSalice) form.append('pdf_salice', pdfSalice);
-          if (pdfAlarcon) form.append('pdf_alarcon', pdfAlarcon);
-        }
+        if (pdfSalice) form.append('pdf_salice', pdfSalice);
+        if (pdfAlarcon) form.append('pdf_alarcon', pdfAlarcon);
 
         const res = await fetch(url, { method: 'POST', body: form });
         if (!res.ok) {

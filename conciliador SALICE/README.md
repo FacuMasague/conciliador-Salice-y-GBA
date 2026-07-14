@@ -63,10 +63,11 @@ Endpoint principal:
   - Se pueden subir archivos crudos de bancos (`BBVA`, `GALICIA`, `MERCADOPAGO`) y el sistema detecta automáticamente el tipo por formato.
   - El backend fusiona los crudos en el Excel consolidado (record) antes de conciliar.
   - El export de `Descargar validados` devuelve el record consolidado actualizado con los ingresos nuevos + conciliación.
-- V5.2.1:
-  - `fletero/cobrador` se resuelve principalmente desde las fojas de reparto de GESI (`Repartos/GetList` y `Repartos/GetItem`).
-  - El vendedor comercial ya no se usa como fletero; los casos sin evidencia confiable quedan vacíos.
-  - La consulta usa 21 días de historial y concurrencia limitada, ambas configurables.
+- V5.2.2:
+  - Los recibos, importes y medios de pago siguen obteniéndose desde la API de GESI.
+  - El `fletero/cobrador` se completa por número de recibo desde el reporte PDF de Pedidos Móviles, que informa explícitamente `[ID - nombre]`.
+  - Las fojas de reparto y el vendedor comercial del cliente ya no se usan como cobrador.
+  - La interfaz solicita el PDF de control también en modo API y muestra la cobertura obtenida en la metadata.
   - La UI incorpora ordenamiento desde los encabezados, divisor visual banco/recibo y acciones de revisión alineadas con GBA.
 
 Si en algún entorno cambiás rutas o nombres de archivos, ajustá `tests/conftest.py`.

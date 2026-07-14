@@ -3,8 +3,47 @@ from __future__ import annotations
 import datetime as dt
 
 from src.conciliador.excel_loader import BankTxn
-from src.conciliador.pdf_parser import ReceiptPayment
-from src.conciliador.pipeline import compare_excel_pdfs
+from src.conciliador.pdf_parser import Receipt, ReceiptPayment
+from src.conciliador.pipeline import (
+    compare_excel_pdfs,
+    enrich_api_payments_with_pdf_collectors,
+)
+
+
+def test_api_payments_are_enriched_only_by_exact_pdf_receipt_number():
+    payments = [
+        ReceiptPayment(
+            empresa="SALICE",
+            nro_recibo="78535",
+            nro_cliente="33033",
+            cliente_nombre="Cliente",
+            medio_pago="TRANSFERENCIA",
+            fecha_pago="2026-07-09",
+            importe_pago=184000.0,
+            vendedor=None,
+        ),
+        ReceiptPayment(
+            empresa="SALICE",
+            nro_recibo="99999",
+            nro_cliente="33033",
+            cliente_nombre="Cliente",
+            medio_pago="TRANSFERENCIA",
+            fecha_pago="2026-07-09",
+            importe_pago=100.0,
+            vendedor=None,
+        ),
+    ]
+    control = [
+        Receipt("SALICE", "78535", "33033", "Cliente", "206 - Andres Dominguez")
+    ]
+
+    enriched, stats, warnings = enrich_api_payments_with_pdf_collectors(payments, control)
+
+    assert enriched[0].vendedor == "206 - Andres Dominguez"
+    assert not enriched[1].vendedor
+    assert stats["api_payments_enriched_count"] == 1
+    assert stats["api_collectors_missing_count"] == 1
+    assert any("1/2" in warning for warning in warnings)
 
 
 def test_compare_excel_pdfs_api_source_uses_external_fetch(monkeypatch):

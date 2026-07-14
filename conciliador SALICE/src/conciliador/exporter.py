@@ -8,6 +8,7 @@ import zipfile
 from typing import Dict, List
 
 import openpyxl
+from openpyxl.utils import get_column_letter
 
 
 AR_NUMBER_FORMAT = '#.##0,00'
@@ -150,6 +151,37 @@ def export_xlsx(result: Dict[str, List[dict]], out_path: str) -> str:
                     # only format numeric cells
                     if isinstance(cell.value, (int, float)):
                         cell.number_format = AR_NUMBER_FORMAT
+
+        # El Excel técnico también debe ser legible sin que el usuario tenga
+        # que ensanchar manualmente las columnas, especialmente el cobrador.
+        preferred_widths = {
+            "Tipo fila": 15,
+            "Tipo no encontrado": 22,
+            "Ranking": 10,
+            "Nro recibo": 12,
+            "Nro cliente": 12,
+            "Cliente": 32,
+            "Medio de pago": 20,
+            "Fecha recibo": 14,
+            "Importe recibo": 18,
+            "Vendedor": 34,
+            "Ítem en recibo": 18,
+            "Origen": 16,
+            "Fecha movimiento": 18,
+            "Importe movimiento": 20,
+            "Detalle movimiento": 48,
+            "Fila Excel": 12,
+            "Dif días": 10,
+            "Dif importe": 16,
+            "Peso": 14,
+            "Motivo": 24,
+        }
+        for col_idx, col_name in enumerate(cols, start=1):
+            width = preferred_widths.get(col_name)
+            if width:
+                ws.column_dimensions[get_column_letter(col_idx)].width = width
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
 
     # V2.0:
     # - Validados: sin columna Motivo
@@ -302,7 +334,7 @@ def export_no_encontrados_xlsx(result: Dict[str, List[dict]], out_path: str) -> 
             "Importe movimiento": 18,
             "Importe recibo": 18,
             "Detalle movimiento": 48,
-            FLETERO_HEADER: 28,
+            FLETERO_HEADER: 34,
             "Ítem en recibo": 18,
             "Fila Excel": 12,
             "Nro recibo": 12,
@@ -1171,7 +1203,7 @@ def export_filled_bank_excel(
 
         vendedor_col = vendedor_col_by_sheet.get(sheet_name)
         if vendedor_col is not None:
-            _set_min_column_width(root, int(vendedor_col), 28.0)
+            _set_min_column_width(root, int(vendedor_col), 34.0)
 
         # serializar
         # Preserve a valid XML header similar to the original (standalone="yes").
