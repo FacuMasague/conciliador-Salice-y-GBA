@@ -321,40 +321,6 @@
           </label>
         </div>
 
-        <div id="pdf_upload_col" class="upload-col upload-col--wide">
-          <div class="upload-head">
-            <div>
-              <div id="pdf_upload_title" class="upload-title">Control de cobradores</div>
-              <div id="pdf_upload_note" class="upload-note">Subí el reporte de Pedidos Móviles para completar el cobrador exacto de cada recibo.</div>
-            </div>
-            <span id="pdf_upload_tag" class="upload-tag">Paso 3</span>
-          </div>
-          <div class="upload-stack">
-            <div>
-              <div class="upload-title" style="font-size:14px;">PDF Pedidos Móviles SALICE</div>
-              <input id="pdf_salice" class="file-hidden" type="file" accept="application/pdf,.pdf" />
-              <label for="pdf_salice" class="drop" title="Seleccionar PDF SALICE">
-                <div class="drop-inner">
-                  <div class="drop-icon">▦</div>
-                  <div class="drop-title">Seleccionar PDF</div>
-                  <div id="salice_name" class="name muted">Ningún archivo seleccionado</div>
-                </div>
-              </label>
-            </div>
-
-            <div>
-              <div class="upload-title" style="font-size:14px;">PDF Pedidos Móviles Alarcón</div>
-              <input id="pdf_alarcon" class="file-hidden" type="file" accept="application/pdf,.pdf" />
-              <label for="pdf_alarcon" class="drop" title="Seleccionar PDF Alarcón">
-                <div class="drop-inner">
-                  <div class="drop-icon">▦</div>
-                  <div class="drop-title">Seleccionar PDF</div>
-                  <div id="alarcon_name" class="name muted">Ningún archivo seleccionado</div>
-                </div>
-              </label>
-            </div>
-          </div>
-        </div>
       </div>
 
       <div style="margin-top: 10px;"></div>
@@ -369,20 +335,6 @@
     <p class="muted" style="margin:8px 0 0;">
       Estos parámetros existen para casos raros. En general, no hace falta tocarlos.
     </p>
-
-    <div class="cfg-section">
-      <div class="cfg-title">API</div>
-      <div class="cfg-grid">
-        <div class="cfg-field">
-          <label>Modo de recibos</label>
-          <select id="receipts_mode" style="width:100%;">
-            <option value="api" selected>Modo API</option>
-            <option value="pdf">Modo legacy (PDF)</option>
-          </select>
-          <div class="muted">En API, los recibos y padrón se leen desde GESI.</div>
-        </div>
-      </div>
-    </div>
 
     <div class="cfg-section">
       <div class="cfg-title">Filtros y búsqueda</div>
@@ -905,7 +857,6 @@
 
     function readConfigFromUI() {
       return {
-        receipts_mode: String($("receipts_mode").value || 'api'),
         api_receipts_days: 4,
         api_start_date: String($("api_start_date").value || ''),
         api_end_date: String($("api_end_date").value || ''),
@@ -948,27 +899,19 @@
       if (cfg.show_peso !== undefined) $("show_peso").checked = !!cfg.show_peso;
       if (cfg.show_cuit !== undefined) $("show_cuit").checked = !!cfg.show_cuit;
       if (cfg.persist_cfg !== undefined) $("persist_cfg").checked = !!cfg.persist_cfg;
-      if (cfg.receipts_mode !== undefined) $("receipts_mode").value = String(cfg.receipts_mode || 'api');
       normalizeDateRange();
       refreshReceiptsModeUI();
     }
 
     function isApiMode() {
-      return String($("receipts_mode").value || 'api') === 'api';
+      return true;
     }
 
     function refreshReceiptsModeUI() {
-      const api = isApiMode();
       const uploads = document.querySelector('.uploads');
       const rangePanel = $("api_range_panel");
-      if (rangePanel) rangePanel.classList.toggle('hidden', !api);
-      if (uploads) uploads.classList.toggle('uploads--api', api);
-      $("pdf_upload_title").textContent = api ? 'Control de cobradores' : 'Recibos PDF';
-      $("pdf_upload_note").textContent = api
-        ? 'Obligatorio para obtener el cobrador correcto. Los importes y medios siguen viniendo de GESI.'
-        : 'En modo legacy, el PDF también se usa como fuente de los recibos.';
-      $("pdf_upload_tag").textContent = api ? 'Paso 3' : 'Legacy';
-      if (!api) closeDatePopover();
+      if (rangePanel) rangePanel.classList.remove('hidden');
+      if (uploads) uploads.classList.add('uploads--api');
     }
 
     function setCfgStatus(msg) {
@@ -1027,12 +970,10 @@
       lab.textContent = name;
       lab.classList.toggle('muted', !(inp.files && inp.files.length));
     }
-    ['raw_banks','record_excel','pdf_salice','pdf_alarcon'].forEach(id => {
+    ['raw_banks','record_excel'].forEach(id => {
       const map = {
         raw_banks:'raw_banks_name',
         record_excel:'record_name',
-        pdf_salice:'salice_name',
-        pdf_alarcon:'alarcon_name',
       };
       const el = $(id);
       if (el) {
@@ -1086,8 +1027,6 @@
 
     bindDropArea('raw_banks', 'raw_banks_name');
     bindDropArea('record_excel', 'record_name');
-    bindDropArea('pdf_salice', 'salice_name');
-    bindDropArea('pdf_alarcon', 'alarcon_name');
 
     function _sortPrimitive(raw) {
       if (raw === null || raw === undefined) return { kind: 'empty', value: Number.POSITIVE_INFINITY };
@@ -1504,19 +1443,11 @@
       try {
         const rawBanks = Array.from($("raw_banks").files || []);
         const recordExcel = $("record_excel").files[0];
-        const pdfSalice = $("pdf_salice").files[0];
-        const pdfAlarcon = $("pdf_alarcon").files[0];
-        const source = isApiMode() ? 'api' : 'pdf';
+        const source = 'api';
         const apiStartDate = encodeURIComponent($("api_start_date").value || '');
         const apiEndDate = encodeURIComponent($("api_end_date").value || '');
         if (!recordExcel || rawBanks.length === 0) {
           throw new Error("Tenés que seleccionar ingresos crudos y record consolidado.");
-        }
-        if (source === 'pdf' && !pdfSalice && !pdfAlarcon) {
-          throw new Error("En modo legacy, tenés que subir al menos 1 PDF (SALICE o Alarcón).");
-        }
-        if (source === 'api' && !pdfSalice && !pdfAlarcon) {
-          throw new Error("Subí el PDF de Pedidos Móviles para obtener el cobrador correcto.");
         }
 
         const margin = encodeURIComponent($("margin").value);
@@ -1549,8 +1480,6 @@
         const form = new FormData();
         form.append('record_excel', recordExcel);
         rawBanks.forEach((f) => form.append('raw_bank_files', f));
-        if (pdfSalice) form.append('pdf_salice', pdfSalice);
-        if (pdfAlarcon) form.append('pdf_alarcon', pdfAlarcon);
 
         const res = await fetch(url, { method: 'POST', body: form });
         const text = await res.text();
@@ -1612,19 +1541,11 @@
 
         const rawBanks = Array.from($("raw_banks").files || []);
         const recordExcel = $("record_excel").files[0];
-        const pdfSalice = $("pdf_salice").files[0];
-        const pdfAlarcon = $("pdf_alarcon").files[0];
-        const source = isApiMode() ? 'api' : 'pdf';
+        const source = 'api';
         const apiStartDate = encodeURIComponent($("api_start_date").value || '');
         const apiEndDate = encodeURIComponent($("api_end_date").value || '');
         if (!recordExcel || rawBanks.length === 0) {
           throw new Error("Tenés que seleccionar ingresos crudos y record consolidado.");
-        }
-        if (source === 'pdf' && !pdfSalice && !pdfAlarcon) {
-          throw new Error("En modo legacy, tenés que subir al menos 1 PDF.");
-        }
-        if (source === 'api' && !pdfSalice && !pdfAlarcon) {
-          throw new Error("Subí el PDF de Pedidos Móviles para obtener el cobrador correcto.");
         }
 
         const margin = encodeURIComponent($("margin").value);
@@ -1663,8 +1584,6 @@
         if (deletedDudosos && deletedDudosos.length) {
           form.append('drop_dudosos', JSON.stringify(deletedDudosos));
         }
-        if (pdfSalice) form.append('pdf_salice', pdfSalice);
-        if (pdfAlarcon) form.append('pdf_alarcon', pdfAlarcon);
 
         const res = await fetch(url, { method: 'POST', body: form });
         if (!res.ok) {
@@ -1718,9 +1637,6 @@
     }
 
     $("run").addEventListener('click', run);
-    $("receipts_mode").addEventListener('change', () => {
-      refreshReceiptsModeUI();
-    });
     $("dl_user_xlsx").addEventListener('click', () => download('xlsx'));
     $("dl_dudosos_xlsx").addEventListener('click', () => download('dudososxlsx'));
     $("dl_noencontrados_xlsx").addEventListener('click', () => download('noencontradosxlsx'));
@@ -1728,7 +1644,6 @@
 
     // Config modal
     function setDefaults() {
-      $("receipts_mode").value = 'api';
       $("api_start_date").value = '';
       $("api_end_date").value = '';
       $("margin").value = 5;

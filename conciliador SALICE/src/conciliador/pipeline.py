@@ -23,6 +23,7 @@ from .matcher_hungarian import match_hungarian
 from .memdebug import is_mem_debug_enabled, mem_debug_recorder
 from .external.service import fetch_cliente_cuit_map as fetch_cliente_cuit_map_api
 from .external.service import fetch_receipts_and_payments as fetch_receipts_and_payments_api
+from .collector_catalog import load_internal_collector_receipts
 
 API_RECEIPTS_MAX_DAYS = 15
 
@@ -106,14 +107,14 @@ def _normalize_recibo(value: object) -> Optional[str]:
     return s.upper()
 
 
-def enrich_api_payments_with_pdf_collectors(
+def enrich_api_payments_with_collectors(
     payments: List,
     collector_receipts: List,
 ) -> tuple[List, Dict[str, int], List[str]]:
-    """Completa el cobrador de pagos API usando el nro. de recibo del PDF PM.
+    """Completa el cobrador de pagos API usando una relación exacta por recibo.
 
-    El PDF no reemplaza importes, fechas ni medios de pago de GESI. Sólo aporta
-    el usuario/cobrador que figura explícitamente como ``[ID - nombre]``.
+    La fuente de cobradores no reemplaza importes, fechas ni medios de pago de
+    GESI. Sólo aporta el usuario/cobrador asociado al número de recibo.
     """
     exact: Dict[tuple[str, str], str] = {}
     by_number: Dict[str, set[str]] = {}
@@ -173,31 +174,35 @@ def enrich_api_payments_with_pdf_collectors(
     if exact:
         warnings.append(
             f"Cobradores: {enriched_count}/{len(enriched)} pagos API fueron enriquecidos "
-            f"desde {len(exact)} recibos del PDF de Pedidos Móviles."
+            f"desde {len(exact)} asignaciones exactas de la fuente interna."
         )
         missing = stats["api_collectors_missing_count"]
         if missing:
             warnings.append(
                 f"Cobradores: {missing} pagos API quedaron sin cobrador porque su recibo "
-                "no aparece identificado en el PDF de control."
+                "no aparece identificado en la fuente interna."
             )
         if stats["pdf_collectors_not_in_api_count"]:
             warnings.append(
                 "Cobradores: "
-                f"{stats['pdf_collectors_not_in_api_count']} recibos del PDF no fueron "
+                f"{stats['pdf_collectors_not_in_api_count']} asignaciones internas no fueron "
                 "devueltos por GESI en el rango consultado."
             )
         if conflicts:
             warnings.append(
-                f"Cobradores: se ignoraron {conflicts} asignaciones contradictorias dentro del PDF."
+                f"Cobradores: se ignoraron {conflicts} asignaciones contradictorias."
             )
     else:
         warnings.append(
-            "Cobradores: no se recibió un PDF de Pedidos Móviles con líneas "
-            "'[ID - nombre]'. GESI no informa el cobrador del recibo, por lo que "
+            "Cobradores: la fuente interna no contiene asignaciones para este rango. "
+            "GESI no informa el cobrador del recibo, por lo que "
             "los casos sin dato directo quedan vacíos."
         )
     return enriched, stats, warnings
+
+
+# Nombre conservado para integraciones y pruebas de la versión 5.2.2.
+enrich_api_payments_with_pdf_collectors = enrich_api_payments_with_collectors
 
 
 def _find_padron_column(df: pd.DataFrame, candidates: list[str]) -> Optional[str]:
@@ -349,8 +354,8 @@ def compare_excel_pdfs(
 
     receipts_source:
       - "pdf": usa `pdfs` como entrada (modo legacy).
-      - "api": trae recibos por API y, si se adjunta un PDF de Pedidos
-        Móviles, lo usa sólo para completar el cobrador por nro. de recibo.
+      - "api": trae recibos por API y completa el cobrador automáticamente
+        desde la fuente interna administrada por el sistema.
     """
     t0 = time.perf_counter()
     mem_dbg = is_mem_debug_enabled(mem_debug)
@@ -380,6 +385,11 @@ def compare_excel_pdfs(
         "api_collectors_missing_count": 0,
         "pdf_collectors_not_in_api_count": 0,
         "pdf_collector_conflicts_count": 0,
+    }
+    internal_collector_meta: Dict[str, object] = {
+        "internal_collector_catalog_count": 0,
+        "internal_collector_catalog_files": 0,
+        "internal_collector_catalog_loaded": False,
     }
     api_fecha_desde: str | None = None
     api_fecha_hasta: str | None = None
@@ -494,10 +504,15 @@ def compare_excel_pdfs(
             }
 
         # GESI no devuelve el usuario que generó los recibos importados desde
-        # Pedidos Móviles. El reporte PM sí contiene la relación exacta
-        # nro_recibo -> [ID - nombre], por lo que se usa exclusivamente para
-        # enriquecer ese campo sin reemplazar ningún dato monetario de la API.
-        collector_receipts = []
+        # Pedidos Móviles. La aplicación administra internamente la relación
+        # exacta nro_recibo -> [ID - nombre]; el operador no sube controles.
+        collector_receipts, internal_collector_meta, internal_collector_warnings = (
+            load_internal_collector_receipts()
+        )
+        external_warnings.extend(internal_collector_warnings)
+
+        # Compatibilidad de backend: una integración antigua todavía puede
+        # adjuntar reportes, aunque la interfaz 5.2.3 ya no los solicita.
         for pdf_path, empresa_override in pdfs:
             text = extract_pdf_text(pdf_path)
             pdf_receipts, _pdf_payments_ignored = parse_receipts_and_payments_from_text(
@@ -514,7 +529,7 @@ def compare_excel_pdfs(
                 rmaxs.append(rmax)
 
         payments_all, api_collector_stats, collector_warnings = (
-            enrich_api_payments_with_pdf_collectors(payments_all, collector_receipts)
+            enrich_api_payments_with_collectors(payments_all, collector_receipts)
         )
         external_warnings.extend(collector_warnings)
         api_fleteros_count = int(api_collector_stats["api_collectors_count"])
@@ -798,9 +813,11 @@ def compare_excel_pdfs(
         "api_cobradores_count": api_collector_stats["api_collectors_count"],
         "api_cobradores_missing_count": api_collector_stats["api_collectors_missing_count"],
         "api_payments_enriched_from_pdf_count": api_collector_stats["api_payments_enriched_count"],
+        "api_payments_enriched_from_internal_count": api_collector_stats["api_payments_enriched_count"],
         "pdf_cobradores_count": api_collector_stats["pdf_collectors_count"],
         "pdf_cobradores_not_in_api_count": api_collector_stats["pdf_collectors_not_in_api_count"],
         "pdf_cobradores_conflicts_count": api_collector_stats["pdf_collector_conflicts_count"],
+        **internal_collector_meta,
         "api_fecha_desde": api_fecha_desde,
         "api_fecha_hasta": api_fecha_hasta,
         "receipts_count": len(receipts_all),

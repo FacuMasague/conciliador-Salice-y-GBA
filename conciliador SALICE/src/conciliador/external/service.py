@@ -1068,8 +1068,8 @@ def fetch_receipts_and_payments(
         resp.warnings.extend(cliente_features_warnings)
         # V5.2.2: las fojas describen al repartidor logístico, no al usuario
         # que cobró y generó el recibo. Tampoco se usa el vendedor comercial
-        # del cliente. El cobrador se completa luego desde el PDF de Pedidos
-        # Móviles, salvo que GESI informe un cobradorID real en la operación.
+        # del cliente. El cobrador se completa luego desde la fuente interna,
+        # salvo que GESI informe un cobradorID real en la operación.
         formas_rows = payload.get("formasDePago")
         formas_by_id: Dict[str, str] = {}
         if isinstance(formas_rows, list):
@@ -1307,7 +1307,7 @@ def fetch_receipts_and_payments(
     fleteros_missing_count = len(out) - fleteros_count
     resp.warnings.append(
         f"Cobradores directos informados por GESI: {fleteros_count}/{len(out)}; "
-        f"{fleteros_missing_count} pendientes de enriquecer desde Pedidos Móviles."
+        f"{fleteros_missing_count} pendientes de enriquecer desde la fuente interna."
     )
     payments_by_empresa: Dict[str, int] = {}
     for p in out:

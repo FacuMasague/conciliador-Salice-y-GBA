@@ -34,10 +34,10 @@ uvicorn app:app --reload --host 0.0.0.0 --port 8000
 
 Endpoint principal:
 - `POST /compare`
-  - V4 (nuevo): multipart `record_excel` + `raw_bank_files[]` + `pdf_salice/pdf_alarcon`
+  - V5.2.3: multipart `record_excel` + `raw_bank_files[]`; recibos y cobradores se resuelven automáticamente.
   - Legacy: multipart `excel` + `pdf_salice/pdf_alarcon`
 - `POST /export`
-  - V4 (nuevo): multipart `record_excel` + `raw_bank_files[]` + `pdf_salice/pdf_alarcon`
+  - V5.2.3: multipart `record_excel` + `raw_bank_files[]`; recibos y cobradores se resuelven automáticamente.
   - Legacy: multipart `excel` + `pdf_salice/pdf_alarcon`
 
 
@@ -69,5 +69,10 @@ Endpoint principal:
   - Las fojas de reparto y el vendedor comercial del cliente ya no se usan como cobrador.
   - La interfaz solicita el PDF de control también en modo API y muestra la cobertura obtenida en la metadata.
   - La UI incorpora ordenamiento desde los encabezados, divisor visual banco/recibo y acciones de revisión alineadas con GBA.
+- V5.2.3:
+  - Se eliminó de la interfaz el control y la carga de PDF de cobradores.
+  - La web funciona siempre con los recibos de GESI y completa el cobrador desde una fuente interna administrada por el sistema.
+  - El operador sólo sube los extractos bancarios y el record consolidado.
+  - El catálogo interno predeterminado está en `data/cobradores.json`; puede reemplazarse del lado del servidor con `CONCILIADOR_COBRADORES_PATH`, sin exponer esa tarea en la interfaz.
 
 Si en algún entorno cambiás rutas o nombres de archivos, ajustá `tests/conftest.py`.

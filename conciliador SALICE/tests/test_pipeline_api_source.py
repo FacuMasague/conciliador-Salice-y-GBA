@@ -46,6 +46,61 @@ def test_api_payments_are_enriched_only_by_exact_pdf_receipt_number():
     assert any("1/2" in warning for warning in warnings)
 
 
+def test_api_mode_uses_internal_collectors_without_user_pdf(monkeypatch):
+    def _fake_fetch_receipts(days, empresa_filter, start_date=None, end_date=None):
+        return (
+            [
+                ReceiptPayment(
+                    empresa="SALICE",
+                    nro_recibo="78535",
+                    nro_cliente="33033",
+                    cliente_nombre="Cliente",
+                    medio_pago="TRANSFERENCIA",
+                    fecha_pago="2026-07-09",
+                    importe_pago=184000.0,
+                )
+            ],
+            {"external_warnings": []},
+        )
+
+    def _fake_load_bank_txns(_excel_path):
+        return [
+            BankTxn(
+                txn_id="t1",
+                origen="BBVA",
+                fecha=dt.date(2026, 7, 9),
+                hora=None,
+                importe=184000.0,
+                texto_ref="TRANSFERENCIA",
+                row_index=2,
+                parse_ok=True,
+                parse_error=None,
+            )
+        ]
+
+    def _fake_match(_txns, payments, **_kwargs):
+        assert payments[0].vendedor == "206 - Andres Dominguez"
+        return {"validados": [], "dudosos": [], "no_encontrados": []}
+
+    monkeypatch.setattr("src.conciliador.pipeline.fetch_receipts_and_payments_api", _fake_fetch_receipts)
+    monkeypatch.setattr("src.conciliador.pipeline.fetch_cliente_cuit_map_api", lambda *_args: ({}, {}))
+    monkeypatch.setattr("src.conciliador.pipeline.load_bank_txns", _fake_load_bank_txns)
+    monkeypatch.setattr("src.conciliador.pipeline.match_hungarian", _fake_match)
+
+    out = compare_excel_pdfs(
+        "fake.xlsx",
+        [],
+        receipts_source="api",
+        api_start_date_override="2026-07-09",
+        api_end_date_override="2026-07-09",
+        api_empresa_filter="SALICE",
+    )
+
+    assert out["meta"]["api_cobradores_count"] == 1
+    assert out["meta"]["api_cobradores_missing_count"] == 0
+    assert out["meta"]["internal_collector_catalog_loaded"] is True
+
+
 def test_compare_excel_pdfs_api_source_uses_external_fetch(monkeypatch):
     called = {"receipts": False, "padron": False}
     expected_end_date = dt.date(2026, 2, 18)

@@ -38,6 +38,18 @@ def test_compare_api_mode_accepts_no_pdfs(monkeypatch):
     assert body["meta"]["app_version"] == app_module.APP_VERSION
 
 
+def test_web_does_not_ask_user_for_collector_control():
+    client = TestClient(app_module.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'id="pdf_salice"' not in response.text
+    assert 'id="pdf_alarcon"' not in response.text
+    assert "Control de cobradores" not in response.text
+    assert "Subí el PDF de Pedidos Móviles" not in response.text
+
+
 def test_compare_api_mode_passes_optional_collector_pdf(monkeypatch):
     client = TestClient(app_module.app)
 

@@ -25,7 +25,7 @@ from src.conciliador.external.errors import ExternalConfigError, ExternalProvide
 
 
 # Versión visible en UI y en /docs
-APP_VERSION = "5.2.2"
+APP_VERSION = "5.2.3"
 app = FastAPI(title="Conciliador de Recibos e Ingresos", version=APP_VERSION)
 
 # Para desarrollo web (frontend local) sin fricción.
@@ -186,7 +186,7 @@ async def compare(
     mem_debug: bool = Query(False, description="Activa métricas de memoria por etapa en meta"),
     show_peso: bool = Query(False, description="Mostrar la columna Peso en los resultados (por defecto oculto)"),
     show_cuit: bool = Query(False, description="Mostrar columnas de CUIT en los resultados (por defecto oculto)"),
-    receipts_source: str = Query("pdf", pattern="^(pdf|api)$", description="Fuente de recibos: pdf (legacy) o api (v5)"),
+    receipts_source: str = Query("api", pattern="^(pdf|api)$", description="Fuente de recibos: API automática; PDF queda sólo para compatibilidad legacy"),
     api_receipts_days: int = Query(4, ge=1, le=15, description="Fallback de días si no se especifica rango manual de recibos por API"),
     api_start_date: str | None = Query(None, description="Fecha desde para recibos API (YYYY-MM-DD)"),
     api_end_date: str | None = Query(None, description="Fecha hasta para recibos API (YYYY-MM-DD)"),
@@ -202,7 +202,7 @@ async def compare(
       - meta: info de la corrida
     """
 
-    source = (receipts_source or "pdf").strip().lower()
+    source = (receipts_source or "api").strip().lower()
     if source == "pdf" and pdf_salice is None and pdf_alarcon is None:
         raise HTTPException(status_code=400, detail="Tenés que subir al menos 1 PDF (SALICE o Alarcón) o usar receipts_source=api.")
 
@@ -329,7 +329,7 @@ async def export(
     mem_debug: bool = Query(False, description="Activa métricas de memoria por etapa en meta"),
     show_peso: bool = Query(False, description="Mostrar la columna Peso en los resultados (por defecto oculto)"),
     show_cuit: bool = Query(False, description="Mostrar columnas de CUIT en los resultados (por defecto oculto)"),
-    receipts_source: str = Query("pdf", pattern="^(pdf|api)$", description="Fuente de recibos: pdf (legacy) o api (v5)"),
+    receipts_source: str = Query("api", pattern="^(pdf|api)$", description="Fuente de recibos: API automática; PDF queda sólo para compatibilidad legacy"),
     api_receipts_days: int = Query(4, ge=1, le=15, description="Fallback de días si no se especifica rango manual de recibos por API"),
     api_start_date: str | None = Query(None, description="Fecha desde para recibos API (YYYY-MM-DD)"),
     api_end_date: str | None = Query(None, description="Fecha hasta para recibos API (YYYY-MM-DD)"),
@@ -345,7 +345,7 @@ async def export(
       - devxlsx -> Excel técnico con hojas (Validados/Dudosos/No encontrados/Meta)
       - zipcsv  -> (legacy) zip con CSV
     """
-    source = (receipts_source or "pdf").strip().lower()
+    source = (receipts_source or "api").strip().lower()
     if source == "pdf" and pdf_salice is None and pdf_alarcon is None:
         raise HTTPException(status_code=400, detail="Tenés que subir al menos 1 PDF (SALICE o Alarcón) o usar receipts_source=api.")
 
